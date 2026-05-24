@@ -1,0 +1,4 @@
+# Runtime dependencies for the NYC Subway Arrivals plugin.
+# protobuf provides the runtime for the committed gtfs_realtime*_pb2.py bindings.
+protobuf>=4.21
+requests>=2.28

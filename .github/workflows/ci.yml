@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FiestaBoard (test dependency)
+        run: |
+          git clone --depth 1 https://github.com/Fiestaboard/FiestaBoard.git /tmp/fb
+          pip install -r /tmp/fb/requirements.txt
+          pip install -r /tmp/fb/requirements-dev.txt
+
+      - name: Install plugin dependencies
+        run: pip install -r requirements.txt pytest pytest-cov
+
+      - name: Run plugin tests with coverage
+        run: |
+          PYTHONPATH=/tmp/fb:$PYTHONPATH \
+          python -m pytest tests/ -v \
+            --cov=plugins/nyc_subway \
+            --cov-report=term-missing \
+            --cov-fail-under=85
+
+      - name: Validate manifest
+        run: |
+          python -c "
+          import json, sys
+          m = json.load(open('manifest.json'))
+          required = ['id', 'name', 'version']
+          missing = [f for f in required if f not in m]
+          if missing:
+              print(f'Missing required fields: {missing}')
+              sys.exit(1)
+          print('Manifest valid')
+          "

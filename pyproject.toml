@@ -1,0 +1,8 @@
+[tool.coverage.run]
+branch = true
+# Generated protobuf bindings are not plugin logic; exclude from coverage.
+omit = [
+    "plugins/nyc_subway/gtfs_realtime_pb2.py",
+    "plugins/nyc_subway/gtfs_realtime_NYCT_pb2.py",
+    "tests/*",
+]

@@ -1,0 +1,155 @@
+{
+  "id": "nyc_subway",
+  "name": "NYC Subway Arrivals",
+  "version": "1.0.0",
+  "description": "Live upcoming train arrivals for a chosen NYC subway station, like the station countdown clocks.",
+  "author": "Alexander Ananiadis",
+  "icon": "train",
+  "category": "transit",
+  "repository": "https://github.com/Fiestaboard/fiestaboard-plugin--nyc-subway",
+  "documentation": "README.md",
+
+  "min_refresh_seconds": 30,
+
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "station": {
+        "type": "string",
+        "title": "Station",
+        "description": "Subway station name (e.g. \"Times Sq-42 St\"). A GTFS stop id also works. If a name is shared by several stations, qualify it with routes, e.g. \"86 St (1)\"."
+      },
+      "direction": {
+        "type": "string",
+        "title": "Direction",
+        "description": "Which direction(s) of travel to show.",
+        "enum": ["both", "north", "south"],
+        "enumNames": ["Both", "North / Uptown", "South / Downtown"],
+        "default": "both",
+        "ui:widget": "select"
+      },
+      "routes": {
+        "type": "string",
+        "title": "Route Filter",
+        "description": "Optional comma-separated routes to show (e.g. \"1,2,3\"). Leave blank for all routes serving the station."
+      },
+      "max_arrivals": {
+        "type": "integer",
+        "title": "Arrivals Per Line",
+        "description": "How many upcoming trains to list per route and direction.",
+        "default": 3,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "refresh_seconds": {
+        "type": "integer",
+        "title": "Refresh Interval (seconds)",
+        "description": "How often to fetch new arrival data.",
+        "default": 60,
+        "minimum": 30
+      },
+      "enabled": {
+        "type": "boolean",
+        "title": "Enabled",
+        "default": false
+      }
+    },
+    "required": ["station"]
+  },
+  "env_vars": [
+    {
+      "name": "NYC_SUBWAY_STATION",
+      "required": false,
+      "description": "Station name or GTFS stop id (can also be set in UI)"
+    },
+    {
+      "name": "NYC_SUBWAY_DIRECTION",
+      "required": false,
+      "description": "Direction filter: both, north, or south (can also be set in UI)"
+    }
+  ],
+  "variables": {
+    "groups": {
+      "station": { "label": "Station" },
+      "arrivals": { "label": "Arrivals" }
+    },
+    "simple": {
+      "station_name": {
+        "description": "Resolved station name",
+        "type": "string",
+        "max_length": 22,
+        "group": "station",
+        "example": "Times Sq-42 St"
+      },
+      "formatted": {
+        "description": "Next train as a one-line summary",
+        "type": "string",
+        "max_length": 22,
+        "group": "arrivals",
+        "example": "1 Uptown: 3 min"
+      },
+      "arrival_count": {
+        "description": "Total number of upcoming arrivals returned",
+        "type": "number",
+        "max_length": 3,
+        "group": "arrivals",
+        "example": "9"
+      },
+      "updated_at": {
+        "description": "Local time the data was last refreshed",
+        "type": "string",
+        "max_length": 5,
+        "group": "arrivals",
+        "example": "14:05"
+      }
+    },
+    "arrays": {
+      "arrivals": {
+        "label_field": "route",
+        "item_fields": ["route", "direction", "eta", "label"]
+      }
+    }
+  },
+  "max_lengths": {
+    "arrivals.*.route": 3,
+    "arrivals.*.direction": 1,
+    "arrivals.*.eta": 3,
+    "arrivals.*.label": 12
+  },
+  "color_rules_schema": {
+    "eta": {
+      "type": "threshold",
+      "description": "Color arrivals by minutes away (e.g. red when imminent)"
+    }
+  },
+
+  "demo": {
+    "name": "NYC Subway Arrivals Demo",
+    "device_type": "flagship",
+    "template": [
+      "{{nyc_subway.station_name}}",
+      "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.label}} {{nyc_subway.arrivals.0.eta}}",
+      "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.label}} {{nyc_subway.arrivals.1.eta}}",
+      "{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.label}} {{nyc_subway.arrivals.2.eta}}",
+      "{{nyc_subway.arrivals.3.route}} {{nyc_subway.arrivals.3.label}} {{nyc_subway.arrivals.3.eta}}",
+      "Updated {{nyc_subway.updated_at}}"
+    ],
+    "line_metadata": [
+      {"alignment": "center", "wrap": false},
+      {"alignment": "left", "wrap": false},
+      {"alignment": "left", "wrap": false},
+      {"alignment": "left", "wrap": false},
+      {"alignment": "left", "wrap": false},
+      {"alignment": "center", "wrap": false}
+    ]
+  },
+
+  "screenshots": [
+    {
+      "src": "docs/board-display.png",
+      "alt": "NYC Subway Arrivals displayed on a Vestaboard",
+      "caption": "Upcoming arrivals for Times Sq-42 St",
+      "primary": true
+    }
+  ]
+}
