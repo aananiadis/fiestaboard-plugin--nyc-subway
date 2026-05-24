@@ -65,11 +65,11 @@ Each item is one upcoming train, soonest first:
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | enabled | boolean | false | Enable/disable the plugin |
-| station | string | *(required)* | Station name (e.g. "Times Sq-42 St") or a GTFS stop id |
-| direction | string | both | Which direction(s) to show: `both`, `north`, `south` |
-| routes | string | *(all)* | Optional comma-separated route filter (e.g. "1,2,3") |
-| max_arrivals | integer | 3 | Upcoming trains to list per route and direction |
-| refresh_seconds | integer | 60 | How often to fetch new data (minimum 30) |
+| station | string | Times Sq-42 St | Station label (picked from the dropdown) or a GTFS stop id |
+| direction | string | both | Which direction(s) to show: `both`, `north` (uptown), `south` (downtown) |
+| routes | string | *(all)* | Optional comma-separated line filter (e.g. "1,2,3") |
+| max_arrivals | integer | 3 | Upcoming trains to list per line and direction |
+| refresh_seconds | integer | 60 | How often to fetch new data (30–600 seconds) |
 
 If a station name is shared by several unconnected stations, qualify it with
 its routes, e.g. `86 St (1)`. See the [Setup Guide](./docs/SETUP.md) for
