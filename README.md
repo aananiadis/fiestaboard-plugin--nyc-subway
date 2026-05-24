@@ -83,12 +83,22 @@ details.
 - **Direction filtering**: Show only uptown, only downtown, or both.
 - **No API Key Required**: The MTA subway realtime feeds are public.
 
-## Author
-
-Alexander Ananiadis
-
 ## Publishing to the registry
 
 To list this plugin in the FiestaBoard registry, open a pull request adding a
 `nyc_subway` entry to `plugin-registry.json` in the main FiestaBoard
 repository.
+
+## License
+
+Released under the [MIT License](./LICENSE.txt).
+
+## Disclaimer
+
+Subway arrival data is provided by the Metropolitan Transportation Authority
+(MTA). This plugin is not affiliated with, endorsed by, or sponsored by the
+MTA or New York City Transit.
+
+Arrival times are estimates from the live feed and may be inaccurate,
+delayed, or unavailable. Do not rely on this plugin for time-critical travel
+decisions.

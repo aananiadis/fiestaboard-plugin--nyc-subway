@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Live upcoming train arrivals for a chosen NYC subway station, like the station countdown clocks.",
   "author": "Alexander Ananiadis",
+  "license": "MIT",
   "icon": "train",
   "category": "transit",
   "repository": "https://github.com/Fiestaboard/fiestaboard-plugin--nyc-subway",
