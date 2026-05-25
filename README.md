@@ -66,7 +66,7 @@ Each item is one upcoming train, soonest first:
 |---------|------|---------|-------------|
 | enabled | boolean | false | Enable/disable the plugin |
 | station | string | Times Sq-42 St | Station label (picked from the dropdown) or a GTFS stop id |
-| direction | string | both | Which direction(s) to show: `both`, `north` (uptown), `south` (downtown) |
+| direction | string | both | Which direction(s) to show: `both`, `uptown`, `downtown` |
 | routes | string | *(all)* | Optional comma-separated line filter (e.g. "1,2,3") |
 | max_arrivals | integer | 3 | Upcoming trains to list per line and direction |
 | refresh_seconds | integer | 60 | How often to fetch new data (30–600 seconds) |

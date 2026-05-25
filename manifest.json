@@ -472,8 +472,8 @@
         "description": "Which direction(s) of travel to show.",
         "enum": [
           "both",
-          "north",
-          "south"
+          "uptown",
+          "downtown"
         ],
         "enumNames": [
           "Both",
@@ -523,7 +523,7 @@
     {
       "name": "NYC_SUBWAY_DIRECTION",
       "required": false,
-      "description": "Direction filter: both, north, or south (can also be set in UI)"
+      "description": "Direction filter: both, uptown, or downtown (can also be set in UI)"
     }
   ],
   "variables": {

@@ -91,7 +91,7 @@ you know it.
 |---------|------|----------|---------|-------------|
 | `enabled` | boolean | No | false | Enable/disable the plugin |
 | `station` | string | Yes | — | Station name or GTFS stop id |
-| `direction` | string | No | both | `both`, `north`, or `south` |
+| `direction` | string | No | both | `both`, `uptown`, or `downtown` |
 | `routes` | string | No | *(all)* | Comma-separated route filter |
 | `max_arrivals` | integer | No | 3 | Trains per route and direction (1–6) |
 | `refresh_seconds` | integer | No | 60 | Refresh interval, minimum 30 |
