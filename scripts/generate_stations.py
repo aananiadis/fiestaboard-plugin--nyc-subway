@@ -16,6 +16,7 @@ The generated stations.py is committed; this script is not used at runtime.
 
 import csv
 import io
+import json
 import urllib.request
 from collections import Counter
 from pathlib import Path
@@ -237,6 +238,16 @@ def main() -> None:
 
     out.write_text("\n".join(lines) + "\n")
     print(f"Wrote {out} with {len(stations)} station complexes.")
+
+    manifest_path = repo_root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    enum = sorted(
+        (f"{m['name']} ({' '.join(m['routes'])})" for m in stations.values()),
+        key=str.lower,
+    )
+    manifest["settings_schema"]["properties"]["station"]["enum"] = enum
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"Updated {manifest_path} station enum with {len(enum)} entries.")
 
 
 if __name__ == "__main__":
