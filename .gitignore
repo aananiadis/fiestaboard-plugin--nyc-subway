@@ -7,3 +7,4 @@ htmlcov/
 venv/
 .venv/
 NOTES.local.md
+.fiestaboard_path.local

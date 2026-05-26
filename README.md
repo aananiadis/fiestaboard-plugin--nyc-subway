@@ -83,6 +83,16 @@ details.
 - **Direction filtering**: Show only uptown, only downtown, or both.
 - **No API Key Required**: The MTA subway realtime feeds are public.
 
+## Running tests locally
+
+The plugin imports `src.plugins.base` from the FiestaBoard host repo. Point
+the test bootstrap at your local FiestaBoard checkout by either:
+
+- setting `FIESTABOARD_PATH=/path/to/FiestaBoard`, or
+- writing that path to `.fiestaboard_path.local` in this repo root.
+
+Both are per-machine (the file is gitignored). Then run `pytest`.
+
 ## Publishing to the registry
 
 To list this plugin in the FiestaBoard registry, open a pull request adding a
