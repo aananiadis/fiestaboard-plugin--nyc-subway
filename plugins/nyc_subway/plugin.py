@@ -46,8 +46,29 @@ _GENERIC_LABELS = {
     "eastbound", "westbound", "inbound", "outbound", "last stop",
 }
 
+# Per-route Vestaboard tile color, matching the MTA's official line bullets.
+# Routes whose true color (brown, gray) isn't in the Vestaboard palette fall
+# back to "white" rather than a misleading substitute.
+ROUTE_COLORS = {
+    "1": "red", "2": "red", "3": "red",
+    "4": "green", "5": "green", "6": "green", "6X": "green",
+    "7": "violet", "7X": "violet",
+    "A": "blue", "C": "blue", "E": "blue",
+    "B": "orange", "D": "orange", "F": "orange", "FX": "orange", "M": "orange",
+    "G": "green",
+    "N": "yellow", "Q": "yellow", "R": "yellow", "W": "yellow",
+    "J": "white", "Z": "white",   # MTA brown — no brown tile
+    "L": "white",                  # MTA light slate gray — no gray tile
+    "S": "white", "H": "white", "FS": "white", "GS": "white",
+    "SI": "blue", "SIR": "blue",
+}
+
 MAX_LINES = 6  # board height
 LINE_WIDTH = 22  # board width
+
+
+def _color_for_route(route: str) -> str:
+    return ROUTE_COLORS.get((route or "").upper(), "white")
 
 
 class NycSubwayPlugin(PluginBase):
@@ -271,6 +292,7 @@ class NycSubwayPlugin(PluginBase):
                     "direction_short": DIRECTION_SHORT[suffix],
                     "terminus": terminus,
                     "label": cls._friendly_label(raw, terminus),
+                    "color": _color_for_route(arr["route"]),
                     "etas": [],
                 }
                 grouped[key] = group
@@ -296,6 +318,7 @@ class NycSubwayPlugin(PluginBase):
                     "eta": eta,
                     "label": group["label"],
                     "terminus": group["terminus"],
+                    "color": group["color"],
                 })
         arrivals.sort(key=lambda a: a["eta"])
 

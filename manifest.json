@@ -575,7 +575,8 @@
           "direction_short",
           "eta",
           "label",
-          "terminus"
+          "terminus",
+          "color"
         ]
       }
     }
@@ -586,7 +587,8 @@
     "arrivals.*.direction_short": 4,
     "arrivals.*.eta": 3,
     "arrivals.*.label": 12,
-    "arrivals.*.terminus": 22
+    "arrivals.*.terminus": 22,
+    "arrivals.*.color": 6
   },
   "color_rules_schema": {
     "eta": {
