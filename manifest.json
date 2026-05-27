@@ -505,6 +505,12 @@
         "minimum": 30,
         "maximum": 600
       },
+      "show_alerts": {
+        "type": "boolean",
+        "title": "Show Line Status",
+        "description": "Fetch MTA service alerts and expose a green/yellow/red status per line.",
+        "default": true
+      },
       "enabled": {
         "type": "boolean",
         "title": "Enabled",
@@ -534,6 +540,9 @@
       },
       "arrivals": {
         "label": "Arrivals"
+      },
+      "status": {
+        "label": "Line Status"
       }
     },
     "simple": {
@@ -564,6 +573,13 @@
         "max_length": 5,
         "group": "arrivals",
         "example": "14:05"
+      },
+      "line_status": {
+        "description": "Worst status across the lines serving this station: green, yellow, or red",
+        "type": "string",
+        "max_length": 6,
+        "group": "status",
+        "example": "yellow"
       }
     },
     "arrays": {
@@ -575,7 +591,15 @@
           "direction_short",
           "eta",
           "label",
-          "terminus"
+          "terminus",
+          "status"
+        ]
+      },
+      "line_statuses": {
+        "label_field": "route",
+        "item_fields": [
+          "route",
+          "status"
         ]
       }
     }
@@ -586,12 +610,20 @@
     "arrivals.*.direction_short": 4,
     "arrivals.*.eta": 3,
     "arrivals.*.label": 12,
-    "arrivals.*.terminus": 22
+    "arrivals.*.terminus": 22,
+    "arrivals.*.status": 6,
+    "line_statuses.*.route": 3,
+    "line_statuses.*.status": 6
   },
   "color_rules_schema": {
     "eta": {
       "type": "threshold",
       "description": "Color arrivals by minutes away (e.g. red when imminent)"
+    },
+    "status": {
+      "type": "enum",
+      "values": ["green", "yellow", "red"],
+      "description": "Color by MTA service-alert status: green = normal, yellow = detour/changes, red = delays or no service"
     }
   },
   "demo": {

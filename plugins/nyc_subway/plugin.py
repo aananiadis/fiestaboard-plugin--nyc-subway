@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 # Public, key-free MTA GTFS-realtime subway feeds.
 FEED_BASE = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2F"
+ALERTS_URL = (
+    "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts"
+)
 
 REQUEST_TIMEOUT = 10  # seconds, per feed
 
@@ -48,6 +51,22 @@ _GENERIC_LABELS = {
 
 MAX_LINES = 6  # board height
 LINE_WIDTH = 22  # board width
+
+# GTFS-realtime Alert.Effect enum -> status color.
+# Anything not listed (incl. ADDITIONAL_SERVICE, UNKNOWN_EFFECT, no alert) = green.
+STATUS_GREEN = "green"
+STATUS_YELLOW = "yellow"
+STATUS_RED = "red"
+_STATUS_RANK = {STATUS_GREEN: 0, STATUS_YELLOW: 1, STATUS_RED: 2}
+_EFFECT_STATUS = {
+    1: STATUS_RED,     # NO_SERVICE
+    2: STATUS_RED,     # REDUCED_SERVICE
+    3: STATUS_RED,     # SIGNIFICANT_DELAYS
+    4: STATUS_YELLOW,  # DETOUR
+    6: STATUS_YELLOW,  # MODIFIED_SERVICE
+    7: STATUS_YELLOW,  # OTHER_EFFECT
+    9: STATUS_YELLOW,  # STOP_MOVED
+}
 
 
 class NycSubwayPlugin(PluginBase):
@@ -78,6 +97,14 @@ class NycSubwayPlugin(PluginBase):
             return None
         routes = {r.strip().upper() for r in str(raw).replace(",", " ").split() if r.strip()}
         return routes or None
+
+    def _get_show_alerts(self) -> bool:
+        value = self.config.get("show_alerts")
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return value.strip().lower() not in ("false", "0", "no", "off", "")
+        return bool(value)
 
     def _get_max_arrivals(self) -> int:
         try:
@@ -134,8 +161,19 @@ class NycSubwayPlugin(PluginBase):
         except _AllFeedsFailed as exc:
             return PluginResult(available=False, error=str(exc))
 
+        station_routes = {r.upper() for r in station.get("routes", [])}
+        if route_filter:
+            status_routes = station_routes & route_filter
+        else:
+            status_routes = station_routes
+        statuses = (
+            self._fetch_route_statuses(status_routes)
+            if self._get_show_alerts() and status_routes
+            else {r: STATUS_GREEN for r in status_routes}
+        )
+
         groups = self._group_arrivals(arrivals, labels, max_arrivals)
-        data = self._build_data(station, groups)
+        data = self._build_data(station, groups, statuses)
         return PluginResult(
             available=True,
             data=data,
@@ -181,6 +219,37 @@ class NycSubwayPlugin(PluginBase):
         feed = gtfs_realtime_pb2.FeedMessage()
         feed.ParseFromString(response.content)
         return feed
+
+    def _fetch_route_statuses(self, routes: set) -> Dict[str, str]:
+        """Return {route: status_color} for the given routes, based on MTA alerts.
+
+        Falls back to all-green if the alerts feed is unreachable.
+        """
+        statuses = {r: STATUS_GREEN for r in routes}
+        try:
+            response = requests.get(ALERTS_URL, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            feed = gtfs_realtime_pb2.FeedMessage()
+            feed.ParseFromString(response.content)
+        except Exception as exc:
+            logger.warning("NYC Subway alerts feed failed: %s", exc)
+            return statuses
+
+        now = datetime.now(timezone.utc).timestamp()
+        for entity in feed.entity:
+            if not entity.HasField("alert"):
+                continue
+            alert = entity.alert
+            if not _alert_is_active(alert, now):
+                continue
+            status = _EFFECT_STATUS.get(alert.effect)
+            if not status:
+                continue
+            for informed in alert.informed_entity:
+                route = (informed.route_id or "").upper()
+                if route in statuses and _STATUS_RANK[status] > _STATUS_RANK[statuses[route]]:
+                    statuses[route] = status
+        return statuses
 
     @staticmethod
     def _parse_feed(
@@ -283,11 +352,15 @@ class NycSubwayPlugin(PluginBase):
         return result
 
     def _build_data(
-        self, station: Dict[str, Any], groups: List[Dict[str, Any]]
+        self,
+        station: Dict[str, Any],
+        groups: List[Dict[str, Any]],
+        statuses: Dict[str, str],
     ) -> Dict[str, Any]:
         """Build the template-variable dictionary."""
         arrivals = []
         for group in groups:
+            route_status = statuses.get(group["route"].upper(), STATUS_GREEN)
             for eta in group["etas"]:
                 arrivals.append({
                     "route": group["route"],
@@ -296,6 +369,7 @@ class NycSubwayPlugin(PluginBase):
                     "eta": eta,
                     "label": group["label"],
                     "terminus": group["terminus"],
+                    "status": route_status,
                 })
         arrivals.sort(key=lambda a: a["eta"])
 
@@ -306,12 +380,23 @@ class NycSubwayPlugin(PluginBase):
         else:
             formatted = "No trains"
 
+        line_statuses = [
+            {"route": route, "status": statuses[route]}
+            for route in sorted(statuses)
+        ]
+        overall = STATUS_GREEN
+        for status in statuses.values():
+            if _STATUS_RANK[status] > _STATUS_RANK[overall]:
+                overall = status
+
         return {
             "station_name": station["name"],
             "formatted": formatted[:LINE_WIDTH],
             "arrival_count": len(arrivals),
             "updated_at": datetime.now().strftime("%H:%M"),
             "arrivals": arrivals,
+            "line_status": overall,
+            "line_statuses": line_statuses,
         }
 
     @staticmethod
@@ -344,3 +429,18 @@ class NycSubwayPlugin(PluginBase):
 
 class _AllFeedsFailed(Exception):
     """Raised when every realtime feed request fails."""
+
+
+def _alert_is_active(alert, now: float) -> bool:
+    """Return True if the alert is currently in effect (or has no time bounds)."""
+    if not alert.active_period:
+        return True
+    for period in alert.active_period:
+        start = period.start if period.HasField("start") else 0
+        end = period.end if period.HasField("end") else 0
+        if start and now < start:
+            continue
+        if end and now > end:
+            continue
+        return True
+    return False
