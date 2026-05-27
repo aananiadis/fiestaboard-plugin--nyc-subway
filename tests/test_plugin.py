@@ -185,7 +185,7 @@ class TestFetchData:
             ("L", stop_id + "N", 120),
             ("L", stop_id + "S", 180),
         ]))
-        plugin.config = {"station": TEST_STATION, "direction": "north"}
+        plugin.config = {"station": TEST_STATION, "direction": "uptown"}
         result = plugin.fetch_data()
         assert result.available is True
         assert all(a["direction"] == "N" for a in result.data["arrivals"])

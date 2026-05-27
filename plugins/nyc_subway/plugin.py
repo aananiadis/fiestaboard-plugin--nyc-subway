@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 FEED_BASE = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2F"
 
 REQUEST_TIMEOUT = 10  # seconds, per feed
-VALID_DIRECTIONS = ("north", "south", "both")
-DIRECTION_SUFFIX = {"north": "N", "south": "S"}
+VALID_DIRECTIONS = ("uptown", "downtown", "both")
+DIRECTION_SUFFIX = {"uptown": "N", "downtown": "S"}
 MAX_LINES = 6  # board height
 LINE_WIDTH = 22  # board width
 
