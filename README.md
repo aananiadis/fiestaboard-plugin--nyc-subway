@@ -47,6 +47,12 @@ Each item is one upcoming train, soonest first:
 {{nyc_subway.arrivals.0.terminus}}         # Terminal station the train is headed to
                                            #   (e.g. "Jamaica-179 St") — same convention
                                            #   as platform signs ("F to Jamaica-179 St")
+{{nyc_subway.arrivals.0.color}}            # Vestaboard tile color matching the
+                                           #   route's line bullet (e.g. "orange"
+                                           #   for F, "yellow" for R). J/Z (brown)
+                                           #   and L/S (gray) fall back to "white"
+                                           #   since the board has no brown or
+                                           #   gray tile.
 ```
 
 ## Example Templates
