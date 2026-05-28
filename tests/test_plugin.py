@@ -188,7 +188,39 @@ class TestFetchData:
         plugin.config = {"station": TEST_STATION, "direction": "uptown"}
         result = plugin.fetch_data()
         assert result.available is True
-        assert all(a["direction"] == "N" for a in result.data["arrivals"])
+        assert all(a["direction"] == "uptown" for a in result.data["arrivals"])
+        assert all(a["direction_short"] == "up" for a in result.data["arrivals"])
+
+    def test_direction_short_form_accepted(self, plugin, station_stop, monkeypatch):
+        _, stop_id = station_stop
+        _patch_feed(monkeypatch, _build_feed([
+            ("L", stop_id + "N", 120),
+            ("L", stop_id + "S", 180),
+        ]))
+        plugin.config = {"station": TEST_STATION, "direction": "down"}
+        result = plugin.fetch_data()
+        assert result.available is True
+        assert all(a["direction"] == "downtown" for a in result.data["arrivals"])
+
+    def test_terminus_resolved_from_last_stop(self, plugin, station_stop, monkeypatch):
+        _, stop_id = station_stop
+        # A single trip with multiple stop_time_updates — the terminus is the
+        # last stop_id (Canarsie-Rockaway Pkwy, parent stop id L29).
+        now = time.time()
+        feed = pb.FeedMessage()
+        feed.header.gtfs_realtime_version = "1.0"
+        entity = feed.entity.add()
+        entity.id = "0"
+        entity.trip_update.trip.route_id = "L"
+        for sid, offset in [(stop_id + "S", 120), ("L28S", 600), ("L29S", 1200)]:
+            stu = entity.trip_update.stop_time_update.add()
+            stu.stop_id = sid
+            stu.arrival.time = int(now + offset)
+        _patch_feed(monkeypatch, feed.SerializeToString())
+
+        plugin.config = {"station": TEST_STATION, "direction": "downtown"}
+        result = plugin.fetch_data()
+        assert result.data["arrivals"][0]["terminus"] == "Canarsie-Rockaway Pkwy"
 
     def test_route_filter_excludes_other_routes(self, plugin, station_stop,
                                                 monkeypatch):

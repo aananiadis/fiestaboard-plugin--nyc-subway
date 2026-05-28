@@ -470,7 +470,7 @@
       "direction": {
         "type": "string",
         "title": "Direction",
-        "description": "Which direction(s) of travel to show.",
+        "description": "Which direction(s) of travel to show. Short forms 'up' and 'down' are also accepted.",
         "enum": [
           "both",
           "uptown",
@@ -549,7 +549,7 @@
         "type": "string",
         "max_length": 22,
         "group": "arrivals",
-        "example": "1 Uptown: 3 min"
+        "example": "F to Jamaica-179 St: 3m"
       },
       "arrival_count": {
         "description": "Total number of upcoming arrivals returned",
@@ -572,17 +572,21 @@
         "item_fields": [
           "route",
           "direction",
+          "direction_short",
           "eta",
-          "label"
+          "label",
+          "terminus"
         ]
       }
     }
   },
   "max_lengths": {
     "arrivals.*.route": 3,
-    "arrivals.*.direction": 1,
+    "arrivals.*.direction": 8,
+    "arrivals.*.direction_short": 4,
     "arrivals.*.eta": 3,
-    "arrivals.*.label": 12
+    "arrivals.*.label": 12,
+    "arrivals.*.terminus": 22
   },
   "color_rules_schema": {
     "eta": {
@@ -595,10 +599,10 @@
     "device_type": "flagship",
     "template": [
       "{{nyc_subway.station_name}}",
-      "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.label}} {{nyc_subway.arrivals.0.eta}}",
-      "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.label}} {{nyc_subway.arrivals.1.eta}}",
-      "{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.label}} {{nyc_subway.arrivals.2.eta}}",
-      "{{nyc_subway.arrivals.3.route}} {{nyc_subway.arrivals.3.label}} {{nyc_subway.arrivals.3.eta}}",
+      "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.terminus}} {{nyc_subway.arrivals.0.eta}}",
+      "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.terminus}} {{nyc_subway.arrivals.1.eta}}",
+      "{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.terminus}} {{nyc_subway.arrivals.2.eta}}",
+      "{{nyc_subway.arrivals.3.route}} {{nyc_subway.arrivals.3.terminus}} {{nyc_subway.arrivals.3.eta}}",
       "Updated {{nyc_subway.updated_at}}"
     ],
     "line_metadata": [

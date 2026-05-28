@@ -201,6 +201,16 @@ def direction_labels(station: dict) -> dict[str, dict[str, str]]:
         s["stop_id"]: {"N": s["north_label"], "S": s["south_label"]}
         for s in station.get("stops", [])
     }
+
+
+def station_name_for_stop(stop_id: str) -> str | None:
+    """Look up the station name that owns a GTFS stop id (parent, no N/S suffix)."""
+    if not stop_id:
+        return None
+    cid = _STOP_INDEX.get(stop_id)
+    if cid is None and stop_id[-1:] in ("N", "S"):
+        cid = _STOP_INDEX.get(stop_id[:-1])
+    return STATIONS[cid]["name"] if cid else None
 '''
 
 

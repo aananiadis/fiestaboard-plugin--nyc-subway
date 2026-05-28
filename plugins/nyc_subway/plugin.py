@@ -27,8 +27,25 @@ logger = logging.getLogger(__name__)
 FEED_BASE = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2F"
 
 REQUEST_TIMEOUT = 10  # seconds, per feed
-VALID_DIRECTIONS = ("uptown", "downtown", "both")
+
+# Accept long and short forms — boards with narrow columns can ask for "up"/"down".
+DIRECTION_ALIASES = {
+    "both": "both", "all": "both",
+    "uptown": "uptown", "up": "uptown", "north": "uptown", "northbound": "uptown",
+    "downtown": "downtown", "down": "downtown", "south": "downtown", "southbound": "downtown",
+}
+VALID_DIRECTIONS = ("both", "uptown", "downtown", "up", "down")
 DIRECTION_SUFFIX = {"uptown": "N", "downtown": "S"}
+DIRECTION_NAME = {"N": "uptown", "S": "downtown"}
+DIRECTION_SHORT = {"N": "up", "S": "down"}
+
+# MTA's per-platform labels are sometimes generic ("Outbound", "Uptown", etc.) —
+# when they are, the train's terminus is a more useful friendly name.
+_GENERIC_LABELS = {
+    "uptown", "downtown", "northbound", "southbound",
+    "eastbound", "westbound", "inbound", "outbound", "last stop",
+}
+
 MAX_LINES = 6  # board height
 LINE_WIDTH = 22  # board width
 
@@ -53,7 +70,7 @@ class NycSubwayPlugin(PluginBase):
 
     def _get_direction(self) -> str:
         value = (self.config.get("direction") or os.getenv("NYC_SUBWAY_DIRECTION") or "both")
-        return str(value).strip().lower()
+        return DIRECTION_ALIASES.get(str(value).strip().lower(), "both")
 
     def _get_route_filter(self) -> Optional[set]:
         raw = self.config.get("routes")
@@ -82,7 +99,7 @@ class NycSubwayPlugin(PluginBase):
                 errors.append(error)
 
         direction = str(config.get("direction") or "both").strip().lower()
-        if direction not in VALID_DIRECTIONS:
+        if direction not in DIRECTION_ALIASES:
             errors.append(
                 f"Direction must be one of: {', '.join(VALID_DIRECTIONS)}"
             )
@@ -103,8 +120,6 @@ class NycSubwayPlugin(PluginBase):
             return PluginResult(available=False, error=error)
 
         direction = self._get_direction()
-        if direction not in VALID_DIRECTIONS:
-            direction = "both"
         route_filter = self._get_route_filter()
         max_arrivals = self._get_max_arrivals()
 
@@ -186,7 +201,13 @@ class NycSubwayPlugin(PluginBase):
             if route_filter and route.upper() not in route_filter:
                 continue
 
-            for stu in entity.trip_update.stop_time_update:
+            stus = list(entity.trip_update.stop_time_update)
+            # The terminus is the last stop in the trip — riders read this as
+            # "F to Jamaica-179 St", same as platform signs and announcements.
+            terminus_stop = stus[-1].stop_id if stus else ""
+            terminus_name = stations.station_name_for_stop(terminus_stop) or ""
+
+            for stu in stus:
                 stop_id = stu.stop_id
                 if not stop_id:
                     continue
@@ -208,32 +229,48 @@ class NycSubwayPlugin(PluginBase):
                 eta = int(round((when - now) / 60.0))
                 if eta < 0:
                     continue
-                out.append(
-                    {"route": route, "direction": suffix,
-                     "parent": parent, "eta": eta}
-                )
+                out.append({
+                    "route": route,
+                    "suffix": suffix,
+                    "parent": parent,
+                    "eta": eta,
+                    "terminus": terminus_name,
+                })
         return out
 
     # ------------------------------------------------------------------ #
     # Shaping output
     # ------------------------------------------------------------------ #
     @staticmethod
+    def _friendly_label(raw_label: str, terminus: str) -> str:
+        """Replace a generic MTA platform label with the terminus name when possible."""
+        if raw_label and raw_label.strip().lower() not in _GENERIC_LABELS:
+            return raw_label
+        return terminus or raw_label
+
+    @classmethod
     def _group_arrivals(
+        cls,
         arrivals: List[Dict[str, Any]],
         labels: Dict[str, Dict[str, str]],
         max_arrivals: int,
     ) -> List[Dict[str, Any]]:
-        """Group arrivals by (route, direction), keeping the soonest ones."""
+        """Group arrivals by (route, direction, terminus), keeping the soonest ones."""
         grouped: Dict[tuple, Dict[str, Any]] = {}
         for arr in arrivals:
-            key = (arr["route"], arr["direction"])
+            suffix = arr["suffix"]
+            terminus = arr.get("terminus") or ""
+            key = (arr["route"], suffix, terminus)
             group = grouped.get(key)
             if group is None:
-                label = labels.get(arr["parent"], {}).get(arr["direction"], "")
+                raw = labels.get(arr["parent"], {}).get(suffix, "")
                 group = {
                     "route": arr["route"],
-                    "direction": arr["direction"],
-                    "label": label,
+                    "suffix": suffix,
+                    "direction": DIRECTION_NAME[suffix],
+                    "direction_short": DIRECTION_SHORT[suffix],
+                    "terminus": terminus,
+                    "label": cls._friendly_label(raw, terminus),
                     "etas": [],
                 }
                 grouped[key] = group
@@ -255,14 +292,17 @@ class NycSubwayPlugin(PluginBase):
                 arrivals.append({
                     "route": group["route"],
                     "direction": group["direction"],
+                    "direction_short": group["direction_short"],
                     "eta": eta,
                     "label": group["label"],
+                    "terminus": group["terminus"],
                 })
         arrivals.sort(key=lambda a: a["eta"])
 
         if arrivals:
             nxt = arrivals[0]
-            formatted = f"{nxt['route']} {nxt['label']}: {nxt['eta']} min"
+            dest = nxt["terminus"] or nxt["label"]
+            formatted = f"{nxt['route']} to {dest}: {nxt['eta']}m"
         else:
             formatted = "No trains"
 
@@ -276,9 +316,10 @@ class NycSubwayPlugin(PluginBase):
 
     @staticmethod
     def _format_group_line(group: Dict[str, Any]) -> str:
-        """Render one route+direction group as a board line, e.g. '1 N 2,5,9'."""
+        """Render one route+direction group as a board line, e.g. 'F Jamaica 2,5,9'."""
         etas = ",".join(str(e) for e in group["etas"])
-        line = f"{group['route']} {group['direction']} {etas}"
+        dest = (group.get("terminus") or group.get("label") or "")[:10]
+        line = f"{group['route']} {dest} {etas}".rstrip() if dest else f"{group['route']} {etas}"
         return line[:LINE_WIDTH]
 
     def _format_display(

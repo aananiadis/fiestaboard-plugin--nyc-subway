@@ -25,7 +25,7 @@ your station to its realtime feed(s) and fetches only what it needs.
 ### Arrivals
 
 ```
-{{nyc_subway.formatted}}        # Next train as a one-line summary (e.g. "1 Uptown: 3 min")
+{{nyc_subway.formatted}}        # Next train as a one-line summary (e.g. "F to Jamaica-179 St: 3m")
 {{nyc_subway.arrival_count}}    # Total number of upcoming arrivals returned
 {{nyc_subway.updated_at}}       # Local time of the last refresh (e.g. "14:05")
 ```
@@ -35,10 +35,18 @@ your station to its realtime feed(s) and fetches only what it needs.
 Each item is one upcoming train, soonest first:
 
 ```
-{{nyc_subway.arrivals.0.route}}      # Route (e.g. "1", "Q", "GS")
-{{nyc_subway.arrivals.0.direction}}  # "N" (northbound) or "S" (southbound)
-{{nyc_subway.arrivals.0.eta}}        # Minutes until arrival
-{{nyc_subway.arrivals.0.label}}      # Friendly direction (e.g. "Uptown", "Downtown")
+{{nyc_subway.arrivals.0.route}}            # Route (e.g. "1", "Q", "GS")
+{{nyc_subway.arrivals.0.direction}}        # "uptown" or "downtown"
+{{nyc_subway.arrivals.0.direction_short}}  # "up" or "down" (for narrow boards)
+{{nyc_subway.arrivals.0.eta}}              # Minutes until arrival
+{{nyc_subway.arrivals.0.label}}            # Friendly platform label — the MTA's
+                                           #   neighborhood label (e.g. "Manhattan",
+                                           #   "Forest Hills"), or the terminus name
+                                           #   when MTA's label would be generic
+                                           #   ("Outbound", "Inbound", "Uptown", …)
+{{nyc_subway.arrivals.0.terminus}}         # Terminal station the train is headed to
+                                           #   (e.g. "Jamaica-179 St") — same convention
+                                           #   as platform signs ("F to Jamaica-179 St")
 ```
 
 ## Example Templates
@@ -54,9 +62,9 @@ Each item is one upcoming train, soonest first:
 
 ```
 {{nyc_subway.station_name}}
-{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.label}} {{nyc_subway.arrivals.0.eta}}
-{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.label}} {{nyc_subway.arrivals.1.eta}}
-{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.label}} {{nyc_subway.arrivals.2.eta}}
+{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.terminus}} {{nyc_subway.arrivals.0.eta}}
+{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.terminus}} {{nyc_subway.arrivals.1.eta}}
+{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.terminus}} {{nyc_subway.arrivals.2.eta}}
 {center}Updated {{nyc_subway.updated_at}}
 ```
 
@@ -66,7 +74,7 @@ Each item is one upcoming train, soonest first:
 |---------|------|---------|-------------|
 | enabled | boolean | false | Enable/disable the plugin |
 | station | string | Times Sq-42 St | Station label (picked from the dropdown) or a GTFS stop id |
-| direction | string | both | Which direction(s) to show: `both`, `uptown`, `downtown` |
+| direction | string | both | Which direction(s) to show: `both`, `uptown`/`up`, `downtown`/`down` |
 | routes | string | *(all)* | Optional comma-separated line filter (e.g. "1,2,3") |
 | max_arrivals | integer | 3 | Upcoming trains to list per line and direction |
 | refresh_seconds | integer | 60 | How often to fetch new data (30–600 seconds) |
