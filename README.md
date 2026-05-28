@@ -47,7 +47,25 @@ Each item is one upcoming train, soonest first:
 {{nyc_subway.arrivals.0.terminus}}         # Terminal station the train is headed to
                                            #   (e.g. "Jamaica-179 St") — same convention
                                            #   as platform signs ("F to Jamaica-179 St")
+{{nyc_subway.arrivals.0.status}}           # Line status: "green", "yellow", or "red"
 ```
+
+### Line Status
+
+Reads MTA service alerts and maps each line to a traffic-light color:
+
+- **green** — no active alerts
+- **yellow** — detour, modified service, stop moved, or other advisory
+- **red** — significant delays, reduced service, or no service
+
+```
+{{nyc_subway.line_status}}              # Worst status across the station's lines
+{{nyc_subway.line_statuses.0.route}}    # Per-line status array
+{{nyc_subway.line_statuses.0.status}}
+```
+
+Use the `status` color rule in your template to tint arrivals when a line
+is delayed. Set `show_alerts: false` to skip the alerts fetch entirely.
 
 ## Example Templates
 
@@ -78,6 +96,7 @@ Each item is one upcoming train, soonest first:
 | routes | string | *(all)* | Optional comma-separated line filter (e.g. "1,2,3") |
 | max_arrivals | integer | 3 | Upcoming trains to list per line and direction |
 | refresh_seconds | integer | 60 | How often to fetch new data (30–600 seconds) |
+| show_alerts | boolean | true | Fetch MTA service alerts to color each line green/yellow/red |
 
 If a station name is shared by several unconnected stations, qualify it with
 its routes, e.g. `86 St (1)`. See the [Setup Guide](./docs/SETUP.md) for
