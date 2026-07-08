@@ -3,16 +3,6 @@
 The NYC Subway Arrivals plugin shows upcoming train arrivals for a station you
 choose, using the MTA's official realtime subway feeds.
 
-## Overview
-
-**What it does:**
-- Displays the next trains arriving at your station, grouped by route and direction
-- Covers every subway line plus the Staten Island Railway and shuttles
-- Lets you filter by direction (uptown/downtown) and by route
-
-**Prerequisites:**
-- None. The MTA subway GTFS-realtime feeds are public and need **no API key**.
-
 ## Quick Setup
 
 ### 1. Enable the Plugin
@@ -21,17 +11,13 @@ In the FiestaBoard web UI:
 1. Go to **Integrations**
 2. Find **NYC Subway Arrivals** and toggle it **On**
 
-![NYC Subway Arrivals in Integrations list](./integrations.png)
-
 ### 2. Configure NYC Subway Arrivals
 
 1. Click the **Configure** button
 2. Enter your **Station** (see "Finding your station" below)
-3. Choose a **Direction**: Both, North / Uptown, or South / Downtown
+3. Choose a **Direction**: Both, Uptown, or Downtown
 4. Optionally set a **Route Filter** and **Arrivals Per Line**
 5. Click **Save Changes**
-
-![NYC Subway Arrivals configuration dialog](./configuration.png)
 
 ### 3. Create a Board Template
 
@@ -48,9 +34,7 @@ Example template:
 
 ### 4. View on Your Board
 
-Once configured, the plugin output displays on your board when the page is active:
-
-![NYC Subway Arrivals on Vestaboard](./board-display.png)
+Once configured, the plugin output displays on your board when the page is active.
 
 ## Finding your station
 
@@ -81,9 +65,10 @@ you know it.
 | `{{nyc_subway.arrival_count}}` | Total upcoming arrivals returned | `9` |
 | `{{nyc_subway.updated_at}}` | Local time of last refresh | `14:05` |
 | `{{nyc_subway.arrivals.0.route}}` | Route of the soonest train | `1` |
-| `{{nyc_subway.arrivals.0.direction}}` | `N` or `S` | `N` |
+| `{{nyc_subway.arrivals.0.direction}}` | `uptown` or `downtown` | `uptown` |
 | `{{nyc_subway.arrivals.0.eta}}` | Minutes until arrival | `3` |
-| `{{nyc_subway.arrivals.0.label}}` | Friendly direction | `Uptown` |
+| `{{nyc_subway.arrivals.0.label}}` | Platform label | `Uptown` |
+| `{{nyc_subway.arrivals.0.terminus}}` | Terminal station | `Jamaica-179 St` |
 
 ## Configuration Reference
 

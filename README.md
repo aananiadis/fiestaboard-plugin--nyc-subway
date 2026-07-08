@@ -3,16 +3,12 @@
 Live upcoming train arrivals for a chosen NYC subway station, like the
 countdown clocks in the station itself.
 
-![NYC Subway Arrivals Display](./docs/board-display.png)
-
 **→ [Setup Guide](./docs/SETUP.md)** - Configuration and setup instructions
 
 ## Overview
 
 This plugin shows the next trains arriving at a subway station you pick,
-grouped by route and direction. It reads the MTA's official GTFS-realtime
-subway feeds, which are **public and require no API key**. The plugin resolves
-your station to its realtime feed(s) and fetches only what it needs.
+grouped by route and direction, using the MTA's GTFS-realtime subway feeds.
 
 ## Template Variables
 
@@ -39,14 +35,11 @@ Each item is one upcoming train, soonest first:
 {{nyc_subway.arrivals.0.direction}}        # "uptown" or "downtown"
 {{nyc_subway.arrivals.0.direction_short}}  # "up" or "down" (for narrow boards)
 {{nyc_subway.arrivals.0.eta}}              # Minutes until arrival
-{{nyc_subway.arrivals.0.label}}            # Friendly platform label — the MTA's
-                                           #   neighborhood label (e.g. "Manhattan",
-                                           #   "Forest Hills"), or the terminus name
-                                           #   when MTA's label would be generic
-                                           #   ("Outbound", "Inbound", "Uptown", …)
-{{nyc_subway.arrivals.0.terminus}}         # Terminal station the train is headed to
-                                           #   (e.g. "Jamaica-179 St") — same convention
-                                           #   as platform signs ("F to Jamaica-179 St")
+{{nyc_subway.arrivals.0.label}}            # Platform label (e.g. "Manhattan", "Forest Hills"),
+                                           #   falling back to the terminus if MTA's label
+                                           #   is generic ("Uptown", "Outbound", …)
+{{nyc_subway.arrivals.0.terminus}}         # Terminal station, as on platform signs
+                                           #   (e.g. "Jamaica-179 St")
 {{nyc_subway.arrivals.0.color}}            # Vestaboard tile color matching the
                                            #   route's line bullet (e.g. "orange"
                                            #   for F, "yellow" for R). J/Z (brown)
@@ -110,11 +103,10 @@ details.
 
 ## Features
 
-- **Live arrivals**: Real-time train predictions straight from the MTA feeds.
-- **Every line**: All 8 subway feed groups (numbered lines, lettered lines,
-  the L, the Staten Island Railway, and the shuttles) are supported.
-- **Direction filtering**: Show only uptown, only downtown, or both.
-- **No API Key Required**: The MTA subway realtime feeds are public.
+- Every line supported: numbered lines, lettered lines, the L, the Staten
+  Island Railway, and the shuttles.
+- Filter by direction (uptown/downtown/both) or by route.
+- No API key required — the MTA feeds are public.
 
 ## Running tests locally
 
@@ -125,12 +117,6 @@ the test bootstrap at your local FiestaBoard checkout by either:
 - writing that path to `.fiestaboard_path.local` in this repo root.
 
 Both are per-machine (the file is gitignored). Then run `pytest`.
-
-## Publishing to the registry
-
-To list this plugin in the FiestaBoard registry, open a pull request adding a
-`nyc_subway` entry to `plugin-registry.json` in the main FiestaBoard
-repository.
 
 ## License
 
@@ -143,5 +129,4 @@ Subway arrival data is provided by the Metropolitan Transportation Authority
 MTA or New York City Transit.
 
 Arrival times are estimates from the live feed and may be inaccurate,
-delayed, or unavailable. Do not rely on this plugin for time-critical travel
-decisions.
+delayed, or unavailable.
