@@ -8,3 +8,5 @@ venv/
 .venv/
 NOTES.local.md
 .fiestaboard_path.local
+.claude/settings.local.json
+.claude/worktrees/
