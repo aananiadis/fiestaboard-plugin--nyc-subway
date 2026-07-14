@@ -5,12 +5,15 @@ countdown clocks in the station itself. Data comes from the MTA's public
 GTFS-realtime subway feeds (no API key required since 2021).
 
 The MTA splits subway data across 8 feed endpoints by line group. This plugin
-resolves the configured station to its GTFS stop ids and fetches only the
-feed(s) that actually serve it.
+resolves the configured station to its GTFS stop ids, then reads every feed —
+a rerouted train stops at stations its line doesn't normally serve, and it
+stays in its own line group's feed while doing so.
 """
 
 import logging
 import os
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -29,7 +32,24 @@ ALERTS_URL = (
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts"
 )
 
+# Every MTA subway feed. We fetch all of them rather than only the feeds for a
+# station's *scheduled* routes: during reroutes a train shows up at a station
+# its line doesn't normally serve (e.g. E trains running local in Queens stop
+# at 46 St, which is scheduled M/R only). Those trains stay in their own line
+# group's feed, so scoping the fetch to scheduled routes silently drops them.
+ALL_FEEDS = (
+    "gtfs",       # 1234567S
+    "gtfs-ace",
+    "gtfs-bdfm",
+    "gtfs-g",
+    "gtfs-jz",
+    "gtfs-l",
+    "gtfs-nqrw",
+    "gtfs-si",
+)
+
 REQUEST_TIMEOUT = 10  # seconds, per feed
+MAX_FEED_WORKERS = 8  # fetch the feeds concurrently — they are independent
 
 # Accept long and short forms — boards with narrow columns can ask for "up"/"down".
 DIRECTION_ALIASES = {
@@ -66,8 +86,17 @@ ROUTE_COLORS = {
     "SI": "blue", "SIR": "blue",
 }
 
+# Flagship board geometry. Used when the plugin renders outside a board-scoped
+# call (``self.board`` is None); otherwise the real board's size wins, so a
+# Note (3x15) gets lines that actually fit.
 MAX_LINES = 6  # board height
 LINE_WIDTH = 22  # board width
+
+# A destination is only worth printing if this much room is left for it.
+MIN_DEST_WIDTH = 6
+
+# Cap for direction labels, matching `max_lengths` in manifest.json.
+LABEL_WIDTH = 22
 
 # GTFS-realtime Alert.Effect enum -> status color.
 # Anything not listed (incl. ADDITIONAL_SERVICE, UNKNOWN_EFFECT, no alert) = green.
@@ -88,6 +117,39 @@ _EFFECT_STATUS = {
 
 def _color_for_route(route: str) -> str:
     return ROUTE_COLORS.get((route or "").upper(), "white")
+
+
+def _arrival_key(arrival: Dict[str, Any]) -> tuple:
+    """Identity of one train calling at one platform, for de-duplication.
+
+    A trip id pins a train exactly. Feeds that omit it fall back to the
+    train's route and time, which is as unique as a platform can get.
+    """
+    if arrival["trip_id"]:
+        return (arrival["trip_id"], arrival["parent"], arrival["suffix"])
+    return (
+        arrival["route"],
+        arrival["parent"],
+        arrival["suffix"],
+        arrival["eta"],
+    )
+
+
+def _short_place(name: str) -> str:
+    """Shorten a terminus to the place riders name a direction by.
+
+    MTA signage says trains run to "Forest Hills", not "Forest Hills-71 Av".
+    Station names pair a place with a cross street; keep the place half —
+    unless the place half *is* the street ("34 St-Hudson Yards"), in which
+    case the other half is the name people use.
+    """
+    head, sep, tail = (name or "").partition("-")
+    if not sep:
+        return name
+    head, tail = head.strip(), tail.strip()
+    if head[:1].isdigit() and tail:
+        return tail
+    return head or name
 
 
 class NycSubwayPlugin(PluginBase):
@@ -177,16 +239,18 @@ class NycSubwayPlugin(PluginBase):
 
         try:
             arrivals = self._collect_arrivals(
-                stations.feeds_for(station), stop_ids, direction, route_filter
+                ALL_FEEDS, stop_ids, direction, route_filter
             )
         except _AllFeedsFailed as exc:
             return PluginResult(available=False, error=str(exc))
 
-        station_routes = {r.upper() for r in station.get("routes", [])}
+        # Routes we report status for: the ones scheduled here, plus any route
+        # actually running to this station right now (a rerouted E is real
+        # service and deserves a real status).
+        status_routes = {r.upper() for r in station.get("routes", [])}
+        status_routes |= {a["route"].upper() for a in arrivals}
         if route_filter:
-            status_routes = station_routes & route_filter
-        else:
-            status_routes = station_routes
+            status_routes &= route_filter
         statuses = (
             self._fetch_route_statuses(status_routes)
             if self._get_show_alerts() and status_routes
@@ -194,7 +258,8 @@ class NycSubwayPlugin(PluginBase):
         )
 
         groups = self._group_arrivals(arrivals, labels, max_arrivals)
-        data = self._build_data(station, groups, statuses)
+        direction_labels = self._direction_labels(station, groups)
+        data = self._build_data(station, groups, statuses, direction_labels)
         return PluginResult(
             available=True,
             data=data,
@@ -203,29 +268,47 @@ class NycSubwayPlugin(PluginBase):
 
     def _collect_arrivals(
         self,
-        feeds: List[str],
+        feeds,
         stop_ids: set,
         direction: str,
         route_filter: Optional[set],
     ) -> List[Dict[str, Any]]:
-        """Fetch and parse the relevant feeds into a flat arrivals list.
+        """Fetch and parse every feed into a flat arrivals list.
+
+        Feeds are fetched concurrently — they are independent requests, and
+        doing all eight in series would blow past a sane refresh budget.
 
         Raises ``_AllFeedsFailed`` if every feed request/parse fails.
         """
         now = datetime.now(timezone.utc).timestamp()
+        feeds = list(feeds)
         arrivals: List[Dict[str, Any]] = []
         failures = 0
 
-        for slug in feeds:
+        def fetch(slug: str):
             try:
-                feed = self._fetch_feed(slug)
+                return self._fetch_feed(slug)
             except Exception as exc:  # network or parse error
-                failures += 1
                 logger.warning("NYC Subway feed %s failed: %s", slug, exc)
-                continue
-            arrivals.extend(
-                self._parse_feed(feed, stop_ids, direction, route_filter, now)
-            )
+                return None
+
+        # One train must be listed once, even if two feeds carry its trip.
+        seen: set = set()
+
+        workers = min(MAX_FEED_WORKERS, len(feeds)) or 1
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for feed in pool.map(fetch, feeds):
+                if feed is None:
+                    failures += 1
+                    continue
+                for arrival in self._parse_feed(
+                    feed, stop_ids, direction, route_filter, now
+                ):
+                    key = _arrival_key(arrival)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    arrivals.append(arrival)
 
         if feeds and failures == len(feeds):
             raise _AllFeedsFailed("Unable to reach MTA realtime feeds")
@@ -290,6 +373,7 @@ class NycSubwayPlugin(PluginBase):
             route = entity.trip_update.trip.route_id
             if route_filter and route.upper() not in route_filter:
                 continue
+            trip_id = entity.trip_update.trip.trip_id
 
             stus = list(entity.trip_update.stop_time_update)
             # The terminus is the last stop in the trip — riders read this as
@@ -321,6 +405,7 @@ class NycSubwayPlugin(PluginBase):
                     continue
                 out.append({
                     "route": route,
+                    "trip_id": trip_id,
                     "suffix": suffix,
                     "parent": parent,
                     "eta": eta,
@@ -373,21 +458,85 @@ class NycSubwayPlugin(PluginBase):
         result.sort(key=lambda g: (g["etas"][0] if g["etas"] else 999, g["route"]))
         return result
 
+    @staticmethod
+    def _direction_labels(
+        station: Dict[str, Any], groups: List[Dict[str, Any]]
+    ) -> Dict[str, str]:
+        """Station-wide name for each direction, e.g. {'N': 'Forest Hills', 'S': 'Manhattan'}.
+
+        Prefers the MTA's own platform label ("Manhattan", "The Bronx"). When
+        that label is generic ("Outbound", "Uptown"), names the direction after
+        where its trains actually go — the terminus serving the most upcoming
+        trains, ties going to the soonest. That's how the platform signs read,
+        and how the MTA app labels 46 St as "Forest Hills" / "Manhattan".
+
+        A big complex has no single answer: Times Sq's northbound 7 platform
+        points to Queens while its 1 platform points uptown. When the platforms
+        disagree, the plain compass direction is the only honest label — the
+        per-train ``direction_label`` still names each train's own platform.
+        """
+        stops = station.get("stops", [])
+        labels: Dict[str, str] = {}
+        for suffix, key in (("N", "north_label"), ("S", "south_label")):
+            specific = [
+                stop[key]
+                for stop in stops
+                if stop.get(key)
+                and stop[key].strip().lower() not in _GENERIC_LABELS
+            ]
+            # Speak for the whole station only when every platform agrees.
+            if specific and len(specific) == len(stops) and len(set(specific)) == 1:
+                labels[suffix] = specific[0][:LABEL_WIDTH]
+                continue
+            # Platforms disagree (or some are generic): no station-wide answer.
+            if len(stops) != 1:
+                labels[suffix] = DIRECTION_NAME[suffix].title()
+                continue
+
+            # One platform, generic label ("Outbound") — name it by terminus.
+            weight: Counter = Counter()
+            soonest: Dict[str, int] = {}
+            for group in groups:
+                terminus = group["terminus"]
+                if group["suffix"] != suffix or not terminus:
+                    continue
+                weight[terminus] += len(group["etas"])
+                eta = group["etas"][0] if group["etas"] else 999
+                soonest[terminus] = min(soonest.get(terminus, 999), eta)
+
+            if weight:
+                terminus = max(
+                    weight.items(), key=lambda kv: (kv[1], -soonest[kv[0]])
+                )[0]
+                labels[suffix] = _short_place(terminus)[:LABEL_WIDTH]
+            else:
+                labels[suffix] = DIRECTION_NAME[suffix].title()
+        return labels
+
     def _build_data(
         self,
         station: Dict[str, Any],
         groups: List[Dict[str, Any]],
         statuses: Dict[str, str],
+        direction_labels: Dict[str, str],
     ) -> Dict[str, Any]:
         """Build the template-variable dictionary."""
+        width = self._board_width()
         arrivals = []
         for group in groups:
             route_status = statuses.get(group["route"].upper(), STATUS_GREEN)
+            # Name the direction by the platform this train actually leaves from,
+            # so the 7 at Times Sq reads "Queens" while the 1 reads uptown.
+            direction_label = (
+                _short_place(group["label"])[:LABEL_WIDTH]
+                or direction_labels.get(group["suffix"], "")
+            )
             for eta in group["etas"]:
                 arrivals.append({
                     "route": group["route"],
                     "direction": group["direction"],
                     "direction_short": group["direction_short"],
+                    "direction_label": direction_label,
                     "eta": eta,
                     "label": group["label"],
                     "terminus": group["terminus"],
@@ -414,36 +563,62 @@ class NycSubwayPlugin(PluginBase):
 
         return {
             "station_name": station["name"],
-            "formatted": formatted[:LINE_WIDTH],
+            "formatted": formatted[:width],
             "arrival_count": len(arrivals),
             "updated_at": datetime.now().strftime("%H:%M"),
             "arrivals": arrivals,
+            "uptown_label": direction_labels.get("N", ""),
+            "downtown_label": direction_labels.get("S", ""),
             "line_status": overall,
             "line_statuses": line_statuses,
         }
 
+    # ------------------------------------------------------------------ #
+    # Board-aware display
+    # ------------------------------------------------------------------ #
+    def _board_width(self) -> int:
+        """Width of the board being rendered on; Flagship's 22 outside a render."""
+        board = self.board
+        return board.width if board else LINE_WIDTH
+
+    def _board_height(self) -> int:
+        """Height of the board being rendered on; Flagship's 6 outside a render."""
+        board = self.board
+        return board.height if board else MAX_LINES
+
     @staticmethod
-    def _format_group_line(group: Dict[str, Any]) -> str:
-        """Render one route+direction group as a board line, e.g. 'F Jamaica 2,5,9'."""
+    def _format_group_line(group: Dict[str, Any], width: int) -> str:
+        """Render one route+direction group as a board line, e.g. 'F Jamaica 2,5,9'.
+
+        The destination is dropped rather than shaved to a stub when the board
+        is too narrow to hold a meaningful piece of it (a Note's 15 columns).
+        """
         etas = ",".join(str(e) for e in group["etas"])
-        dest = (group.get("terminus") or group.get("label") or "")[:10]
-        line = f"{group['route']} {dest} {etas}".rstrip() if dest else f"{group['route']} {etas}"
-        return line[:LINE_WIDTH]
+        head = f"{group['route']} {etas}"
+        dest = group.get("terminus") or group.get("label") or ""
+
+        room = width - len(head) - 1  # the space before the etas
+        if dest and room >= MIN_DEST_WIDTH:
+            return f"{group['route']} {dest[:room]} {etas}"
+        return head[:width]
 
     def _format_display(
         self, station: Dict[str, Any], groups: List[Dict[str, Any]]
     ) -> List[str]:
-        """Format the station board for standalone display (6 lines)."""
-        lines: List[str] = [station["name"][:LINE_WIDTH]]
+        """Format the station board for standalone display, sized to the board."""
+        width = self._board_width()
+        height = self._board_height()
+
+        lines: List[str] = [station["name"][:width]]
         if not groups:
             lines.append("NO TRAINS")
         else:
-            for group in groups[: MAX_LINES - 1]:
-                lines.append(self._format_group_line(group))
+            for group in groups[: height - 1]:
+                lines.append(self._format_group_line(group, width))
 
-        while len(lines) < MAX_LINES:
+        while len(lines) < height:
             lines.append("")
-        return lines[:MAX_LINES]
+        return lines[:height]
 
     def cleanup(self) -> None:
         """Cleanup when the plugin is disabled. No persistent resources held."""

@@ -580,6 +580,20 @@
         "max_length": 6,
         "group": "status",
         "example": "yellow"
+      },
+      "uptown_label": {
+        "description": "Friendly name for the uptown/northbound direction, e.g. \"Forest Hills\"",
+        "type": "string",
+        "max_length": 22,
+        "group": "station",
+        "example": "Forest Hills"
+      },
+      "downtown_label": {
+        "description": "Friendly name for the downtown/southbound direction, e.g. \"Manhattan\"",
+        "type": "string",
+        "max_length": 22,
+        "group": "station",
+        "example": "Manhattan"
       }
     },
     "arrays": {
@@ -589,6 +603,7 @@
           "route",
           "direction",
           "direction_short",
+          "direction_label",
           "eta",
           "label",
           "terminus",
@@ -609,6 +624,7 @@
     "arrivals.*.route": 3,
     "arrivals.*.direction": 8,
     "arrivals.*.direction_short": 4,
+    "arrivals.*.direction_label": 22,
     "arrivals.*.eta": 3,
     "arrivals.*.label": 12,
     "arrivals.*.terminus": 22,
@@ -624,47 +640,76 @@
     },
     "status": {
       "type": "enum",
-      "values": ["green", "yellow", "red"],
+      "values": [
+        "green",
+        "yellow",
+        "red"
+      ],
       "description": "Color by MTA service-alert status: green = normal, yellow = detour/changes, red = delays or no service"
     }
   },
   "demo": {
-    "name": "NYC Subway Arrivals Demo",
-    "device_type": "flagship",
-    "template": [
-      "{{nyc_subway.station_name}}",
-      "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.terminus}} {{nyc_subway.arrivals.0.eta}}",
-      "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.terminus}} {{nyc_subway.arrivals.1.eta}}",
-      "{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.terminus}} {{nyc_subway.arrivals.2.eta}}",
-      "{{nyc_subway.arrivals.3.route}} {{nyc_subway.arrivals.3.terminus}} {{nyc_subway.arrivals.3.eta}}",
-      "Updated {{nyc_subway.updated_at}}"
-    ],
-    "line_metadata": [
-      {
-        "alignment": "center",
-        "wrap": false
-      },
-      {
-        "alignment": "left",
-        "wrap": false
-      },
-      {
-        "alignment": "left",
-        "wrap": false
-      },
-      {
-        "alignment": "left",
-        "wrap": false
-      },
-      {
-        "alignment": "left",
-        "wrap": false
-      },
-      {
-        "alignment": "center",
-        "wrap": false
-      }
-    ]
+    "flagship": {
+      "name": "NYC Subway Arrivals Demo",
+      "template": [
+        "{{nyc_subway.station_name}}",
+        "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.direction_label}} {{nyc_subway.arrivals.0.eta}}m",
+        "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.direction_label}} {{nyc_subway.arrivals.1.eta}}m",
+        "{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.direction_label}} {{nyc_subway.arrivals.2.eta}}m",
+        "{{nyc_subway.arrivals.3.route}} {{nyc_subway.arrivals.3.direction_label}} {{nyc_subway.arrivals.3.eta}}m",
+        "Updated {{nyc_subway.updated_at}}"
+      ],
+      "line_metadata": [
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        }
+      ],
+      "duration_seconds": 300
+    },
+    "note": {
+      "name": "NYC Subway Arrivals Demo",
+      "template": [
+        "{{nyc_subway.station_name}}",
+        "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.direction_short}} {{nyc_subway.arrivals.0.eta}}m",
+        "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.direction_short}} {{nyc_subway.arrivals.1.eta}}m"
+      ],
+      "line_metadata": [
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        }
+      ],
+      "duration_seconds": 300
+    }
   },
   "screenshots": [
     {
