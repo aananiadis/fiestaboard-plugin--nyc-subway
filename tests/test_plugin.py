@@ -11,6 +11,7 @@ from plugins.nyc_subway import gtfs_realtime_pb2 as pb
 from plugins.nyc_subway import gtfs_realtime_NYCT_pb2 as nyct
 from plugins.nyc_subway import plugin as plugin_module
 from plugins.nyc_subway import stations as stations_module
+from src.devices import BoardContext
 from src.plugins.base import PluginResult
 from src.plugins.manifest import PluginManifest
 
@@ -88,6 +89,17 @@ def _patch_feed(monkeypatch, payload):
         if isinstance(payload, Exception):
             raise payload
         return _FakeResponse(payload)
+
+    monkeypatch.setattr(plugin_module.requests, "get", fake_get)
+
+
+def _patch_feeds_by_slug(monkeypatch, payloads):
+    """Serve a different payload per feed slug; every other feed comes back empty."""
+    empty = _build_feed([])
+
+    def fake_get(url, timeout=None):
+        slug = url.rsplit("%2F", 1)[-1]
+        return _FakeResponse(payloads.get(slug, empty))
 
     monkeypatch.setattr(plugin_module.requests, "get", fake_get)
 
@@ -356,3 +368,72 @@ class TestStationResolution:
         assert stations_module.feeds_for(station) == station["feeds"]
         labels = stations_module.direction_labels(station)
         assert all({"N", "S"} <= set(v) for v in labels.values())
+
+
+# --------------------------------------------------------------------- #
+# Board sizes: Flagship (22x6) and Note (15x3)
+# --------------------------------------------------------------------- #
+class TestBoardSizes:
+    def _result_for(self, plugin, device_type):
+        board = BoardContext.from_device_type(device_type)
+        plugin.clear_cache()
+        with plugin._bound_board(board):
+            return plugin.fetch_data()
+
+    @pytest.fixture(autouse=True)
+    def _feed(self, monkeypatch, station_stop):
+        _, stop_id = station_stop
+        _patch_feeds_by_slug(monkeypatch, {
+            "gtfs-l": _build_feed([
+                ("L", stop_id + "N", 120),
+                ("L", stop_id + "N", 540),
+                ("L", stop_id + "S", 240),
+            ]),
+        })
+
+    def test_note_lines_fit_a_note_board(self, plugin):
+        plugin.config = {"station": TEST_STATION, "show_alerts": False}
+        result = self._result_for(plugin, "note")
+
+        assert len(result.formatted_lines) == 3
+        assert all(len(line) <= 15 for line in result.formatted_lines)
+
+    def test_flagship_lines_fit_a_flagship_board(self, plugin):
+        plugin.config = {"station": TEST_STATION, "show_alerts": False}
+        result = self._result_for(plugin, "flagship")
+
+        assert len(result.formatted_lines) == 6
+        assert all(len(line) <= 22 for line in result.formatted_lines)
+
+    def test_formatted_summary_fits_the_board(self, plugin):
+        plugin.config = {"station": TEST_STATION, "show_alerts": False}
+        assert len(self._result_for(plugin, "note").data["formatted"]) <= 15
+        assert len(self._result_for(plugin, "flagship").data["formatted"]) <= 22
+
+    def test_no_board_falls_back_to_flagship(self, plugin):
+        plugin.config = {"station": TEST_STATION, "show_alerts": False}
+        plugin.clear_cache()
+        result = plugin.fetch_data()
+        assert len(result.formatted_lines) == 6
+
+
+# --------------------------------------------------------------------- #
+# Demo pages
+# --------------------------------------------------------------------- #
+class TestDemoPages:
+    def test_demo_is_keyed_by_device_type(self, manifest_data):
+        assert set(manifest_data["demo"]) == {"flagship", "note"}
+
+    @pytest.mark.parametrize("device_type,rows", [("flagship", 6), ("note", 3)])
+    def test_demo_template_fits_its_board(self, manifest_data, device_type, rows):
+        demo = manifest_data["demo"][device_type]
+        assert len(demo["template"]) == rows
+        assert len(demo["line_metadata"]) == rows
+
+    def test_manifest_exposes_a_demo_for_each_board(self, manifest):
+        parsed = PluginManifest.from_dict(manifest)
+        assert parsed.demo is not None
+        for device_type in ("flagship", "note"):
+            schema = parsed.demo.get(device_type)
+            assert schema is not None
+            assert schema.device_type == device_type

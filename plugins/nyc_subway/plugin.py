@@ -66,8 +66,14 @@ ROUTE_COLORS = {
     "SI": "blue", "SIR": "blue",
 }
 
+# Flagship board geometry. Used when the plugin renders outside a board-scoped
+# call (``self.board`` is None); otherwise the real board's size wins, so a
+# Note (3x15) gets lines that actually fit.
 MAX_LINES = 6  # board height
 LINE_WIDTH = 22  # board width
+
+# A destination is only worth printing if this much room is left for it.
+MIN_DEST_WIDTH = 6
 
 # GTFS-realtime Alert.Effect enum -> status color.
 # Anything not listed (incl. ADDITIONAL_SERVICE, UNKNOWN_EFFECT, no alert) = green.
@@ -380,6 +386,7 @@ class NycSubwayPlugin(PluginBase):
         statuses: Dict[str, str],
     ) -> Dict[str, Any]:
         """Build the template-variable dictionary."""
+        width = self._board_width()
         arrivals = []
         for group in groups:
             route_status = statuses.get(group["route"].upper(), STATUS_GREEN)
@@ -414,7 +421,7 @@ class NycSubwayPlugin(PluginBase):
 
         return {
             "station_name": station["name"],
-            "formatted": formatted[:LINE_WIDTH],
+            "formatted": formatted[:width],
             "arrival_count": len(arrivals),
             "updated_at": datetime.now().strftime("%H:%M"),
             "arrivals": arrivals,
@@ -422,28 +429,52 @@ class NycSubwayPlugin(PluginBase):
             "line_statuses": line_statuses,
         }
 
+    # ------------------------------------------------------------------ #
+    # Board-aware display
+    # ------------------------------------------------------------------ #
+    def _board_width(self) -> int:
+        """Width of the board being rendered on; Flagship's 22 outside a render."""
+        board = self.board
+        return board.width if board else LINE_WIDTH
+
+    def _board_height(self) -> int:
+        """Height of the board being rendered on; Flagship's 6 outside a render."""
+        board = self.board
+        return board.height if board else MAX_LINES
+
     @staticmethod
-    def _format_group_line(group: Dict[str, Any]) -> str:
-        """Render one route+direction group as a board line, e.g. 'F Jamaica 2,5,9'."""
+    def _format_group_line(group: Dict[str, Any], width: int) -> str:
+        """Render one route+direction group as a board line, e.g. 'F Jamaica 2,5,9'.
+
+        The destination is dropped rather than shaved to a stub when the board
+        is too narrow to hold a meaningful piece of it (a Note's 15 columns).
+        """
         etas = ",".join(str(e) for e in group["etas"])
-        dest = (group.get("terminus") or group.get("label") or "")[:10]
-        line = f"{group['route']} {dest} {etas}".rstrip() if dest else f"{group['route']} {etas}"
-        return line[:LINE_WIDTH]
+        head = f"{group['route']} {etas}"
+        dest = group.get("terminus") or group.get("label") or ""
+
+        room = width - len(head) - 1  # the space before the etas
+        if dest and room >= MIN_DEST_WIDTH:
+            return f"{group['route']} {dest[:room]} {etas}"
+        return head[:width]
 
     def _format_display(
         self, station: Dict[str, Any], groups: List[Dict[str, Any]]
     ) -> List[str]:
-        """Format the station board for standalone display (6 lines)."""
-        lines: List[str] = [station["name"][:LINE_WIDTH]]
+        """Format the station board for standalone display, sized to the board."""
+        width = self._board_width()
+        height = self._board_height()
+
+        lines: List[str] = [station["name"][:width]]
         if not groups:
             lines.append("NO TRAINS")
         else:
-            for group in groups[: MAX_LINES - 1]:
-                lines.append(self._format_group_line(group))
+            for group in groups[: height - 1]:
+                lines.append(self._format_group_line(group, width))
 
-        while len(lines) < MAX_LINES:
+        while len(lines) < height:
             lines.append("")
-        return lines[:MAX_LINES]
+        return lines[:height]
 
     def cleanup(self) -> None:
         """Cleanup when the plugin is disabled. No persistent resources held."""

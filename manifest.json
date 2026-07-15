@@ -624,47 +624,76 @@
     },
     "status": {
       "type": "enum",
-      "values": ["green", "yellow", "red"],
+      "values": [
+        "green",
+        "yellow",
+        "red"
+      ],
       "description": "Color by MTA service-alert status: green = normal, yellow = detour/changes, red = delays or no service"
     }
   },
   "demo": {
-    "name": "NYC Subway Arrivals Demo",
-    "device_type": "flagship",
-    "template": [
-      "{{nyc_subway.station_name}}",
-      "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.terminus}} {{nyc_subway.arrivals.0.eta}}",
-      "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.terminus}} {{nyc_subway.arrivals.1.eta}}",
-      "{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.terminus}} {{nyc_subway.arrivals.2.eta}}",
-      "{{nyc_subway.arrivals.3.route}} {{nyc_subway.arrivals.3.terminus}} {{nyc_subway.arrivals.3.eta}}",
-      "Updated {{nyc_subway.updated_at}}"
-    ],
-    "line_metadata": [
-      {
-        "alignment": "center",
-        "wrap": false
-      },
-      {
-        "alignment": "left",
-        "wrap": false
-      },
-      {
-        "alignment": "left",
-        "wrap": false
-      },
-      {
-        "alignment": "left",
-        "wrap": false
-      },
-      {
-        "alignment": "left",
-        "wrap": false
-      },
-      {
-        "alignment": "center",
-        "wrap": false
-      }
-    ]
+    "flagship": {
+      "name": "NYC Subway Arrivals Demo",
+      "template": [
+        "{{nyc_subway.station_name}}",
+        "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.terminus}} {{nyc_subway.arrivals.0.eta}}",
+        "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.terminus}} {{nyc_subway.arrivals.1.eta}}",
+        "{{nyc_subway.arrivals.2.route}} {{nyc_subway.arrivals.2.terminus}} {{nyc_subway.arrivals.2.eta}}",
+        "{{nyc_subway.arrivals.3.route}} {{nyc_subway.arrivals.3.terminus}} {{nyc_subway.arrivals.3.eta}}",
+        "Updated {{nyc_subway.updated_at}}"
+      ],
+      "line_metadata": [
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        }
+      ],
+      "duration_seconds": 300
+    },
+    "note": {
+      "name": "NYC Subway Arrivals Demo",
+      "template": [
+        "{{nyc_subway.station_name}}",
+        "{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.direction_short}} {{nyc_subway.arrivals.0.eta}}m",
+        "{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.direction_short}} {{nyc_subway.arrivals.1.eta}}m"
+      ],
+      "line_metadata": [
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        },
+        {
+          "alignment": "left",
+          "wrap": false
+        }
+      ],
+      "duration_seconds": 300
+    }
   },
   "screenshots": [
     {
