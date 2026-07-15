@@ -5,12 +5,14 @@ countdown clocks in the station itself. Data comes from the MTA's public
 GTFS-realtime subway feeds (no API key required since 2021).
 
 The MTA splits subway data across 8 feed endpoints by line group. This plugin
-resolves the configured station to its GTFS stop ids and fetches only the
-feed(s) that actually serve it.
+resolves the configured station to its GTFS stop ids, then reads every feed —
+a rerouted train stops at stations its line doesn't normally serve, and it
+stays in its own line group's feed while doing so.
 """
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -29,7 +31,24 @@ ALERTS_URL = (
     "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts"
 )
 
+# Every MTA subway feed. We fetch all of them rather than only the feeds for a
+# station's *scheduled* routes: during reroutes a train shows up at a station
+# its line doesn't normally serve (e.g. E trains running local in Queens stop
+# at 46 St, which is scheduled M/R only). Those trains stay in their own line
+# group's feed, so scoping the fetch to scheduled routes silently drops them.
+ALL_FEEDS = (
+    "gtfs",       # 1234567S
+    "gtfs-ace",
+    "gtfs-bdfm",
+    "gtfs-g",
+    "gtfs-jz",
+    "gtfs-l",
+    "gtfs-nqrw",
+    "gtfs-si",
+)
+
 REQUEST_TIMEOUT = 10  # seconds, per feed
+MAX_FEED_WORKERS = 8  # fetch the feeds concurrently — they are independent
 
 # Accept long and short forms — boards with narrow columns can ask for "up"/"down".
 DIRECTION_ALIASES = {
@@ -88,6 +107,22 @@ _EFFECT_STATUS = {
 
 def _color_for_route(route: str) -> str:
     return ROUTE_COLORS.get((route or "").upper(), "white")
+
+
+def _arrival_key(arrival: Dict[str, Any]) -> tuple:
+    """Identity of one train calling at one platform, for de-duplication.
+
+    A trip id pins a train exactly. Feeds that omit it fall back to the
+    train's route and time, which is as unique as a platform can get.
+    """
+    if arrival["trip_id"]:
+        return (arrival["trip_id"], arrival["parent"], arrival["suffix"])
+    return (
+        arrival["route"],
+        arrival["parent"],
+        arrival["suffix"],
+        arrival["eta"],
+    )
 
 
 class NycSubwayPlugin(PluginBase):
@@ -177,16 +212,18 @@ class NycSubwayPlugin(PluginBase):
 
         try:
             arrivals = self._collect_arrivals(
-                stations.feeds_for(station), stop_ids, direction, route_filter
+                ALL_FEEDS, stop_ids, direction, route_filter
             )
         except _AllFeedsFailed as exc:
             return PluginResult(available=False, error=str(exc))
 
-        station_routes = {r.upper() for r in station.get("routes", [])}
+        # Routes we report status for: the ones scheduled here, plus any route
+        # actually running to this station right now (a rerouted E is real
+        # service and deserves a real status).
+        status_routes = {r.upper() for r in station.get("routes", [])}
+        status_routes |= {a["route"].upper() for a in arrivals}
         if route_filter:
-            status_routes = station_routes & route_filter
-        else:
-            status_routes = station_routes
+            status_routes &= route_filter
         statuses = (
             self._fetch_route_statuses(status_routes)
             if self._get_show_alerts() and status_routes
@@ -203,29 +240,47 @@ class NycSubwayPlugin(PluginBase):
 
     def _collect_arrivals(
         self,
-        feeds: List[str],
+        feeds,
         stop_ids: set,
         direction: str,
         route_filter: Optional[set],
     ) -> List[Dict[str, Any]]:
-        """Fetch and parse the relevant feeds into a flat arrivals list.
+        """Fetch and parse every feed into a flat arrivals list.
+
+        Feeds are fetched concurrently — they are independent requests, and
+        doing all eight in series would blow past a sane refresh budget.
 
         Raises ``_AllFeedsFailed`` if every feed request/parse fails.
         """
         now = datetime.now(timezone.utc).timestamp()
+        feeds = list(feeds)
         arrivals: List[Dict[str, Any]] = []
         failures = 0
 
-        for slug in feeds:
+        def fetch(slug: str):
             try:
-                feed = self._fetch_feed(slug)
+                return self._fetch_feed(slug)
             except Exception as exc:  # network or parse error
-                failures += 1
                 logger.warning("NYC Subway feed %s failed: %s", slug, exc)
-                continue
-            arrivals.extend(
-                self._parse_feed(feed, stop_ids, direction, route_filter, now)
-            )
+                return None
+
+        # One train must be listed once, even if two feeds carry its trip.
+        seen: set = set()
+
+        workers = min(MAX_FEED_WORKERS, len(feeds)) or 1
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for feed in pool.map(fetch, feeds):
+                if feed is None:
+                    failures += 1
+                    continue
+                for arrival in self._parse_feed(
+                    feed, stop_ids, direction, route_filter, now
+                ):
+                    key = _arrival_key(arrival)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    arrivals.append(arrival)
 
         if feeds and failures == len(feeds):
             raise _AllFeedsFailed("Unable to reach MTA realtime feeds")
@@ -290,6 +345,7 @@ class NycSubwayPlugin(PluginBase):
             route = entity.trip_update.trip.route_id
             if route_filter and route.upper() not in route_filter:
                 continue
+            trip_id = entity.trip_update.trip.trip_id
 
             stus = list(entity.trip_update.stop_time_update)
             # The terminus is the last stop in the trip — riders read this as
@@ -321,6 +377,7 @@ class NycSubwayPlugin(PluginBase):
                     continue
                 out.append({
                     "route": route,
+                    "trip_id": trip_id,
                     "suffix": suffix,
                     "parent": parent,
                     "eta": eta,
