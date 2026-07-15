@@ -85,6 +85,20 @@ is delayed. Set `show_alerts: false` to skip the alerts fetch entirely.
 {center}Updated {{nyc_subway.updated_at}}
 ```
 
+### Note board (15x3)
+
+```
+{center}{{nyc_subway.station_name}}
+{{nyc_subway.arrivals.0.route}} {{nyc_subway.arrivals.0.direction_short}} {{nyc_subway.arrivals.0.eta}}m
+{{nyc_subway.arrivals.1.route}} {{nyc_subway.arrivals.1.direction_short}} {{nyc_subway.arrivals.1.eta}}m
+```
+
+## Board Sizes
+
+The plugin ships a demo page for both a Flagship (22x6) and a Note (15x3), and
+sizes its own display to whichever board it is rendering on — on a Note it
+drops each train's destination rather than truncating it to a stub.
+
 ## Configuration
 
 | Setting | Type | Default | Description |
