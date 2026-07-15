@@ -92,6 +92,24 @@ def _patch_feed(monkeypatch, payload):
     monkeypatch.setattr(plugin_module.requests, "get", fake_get)
 
 
+def _patch_feeds_by_slug(monkeypatch, payloads):
+    """Serve a different payload per feed slug; every other feed comes back empty.
+
+    Mirrors the real MTA split, where a trip lives in exactly one feed — so a
+    route the plugin never fetches is genuinely invisible.
+    """
+    empty = _build_feed([])
+    requested = []
+
+    def fake_get(url, timeout=None):
+        slug = url.rsplit("%2F", 1)[-1]
+        requested.append(slug)
+        return _FakeResponse(payloads.get(slug, empty))
+
+    monkeypatch.setattr(plugin_module.requests, "get", fake_get)
+    return requested
+
+
 # --------------------------------------------------------------------- #
 # Basic contract
 # --------------------------------------------------------------------- #
@@ -356,3 +374,65 @@ class TestStationResolution:
         assert stations_module.feeds_for(station) == station["feeds"]
         labels = stations_module.direction_labels(station)
         assert all({"N", "S"} <= set(v) for v in labels.values())
+
+
+# --------------------------------------------------------------------- #
+# Reroutes: trains from feeds the station isn't scheduled on
+# --------------------------------------------------------------------- #
+# 46 St (Queens) is scheduled M/R, so its feeds are bdfm + nqrw. When E trains
+# run local in Queens they stop here too, but stay in the ace feed. Scoping the
+# fetch to a station's scheduled feeds silently dropped them.
+REROUTE_STATION = "46 St (M R)"
+REROUTE_STOP = "G18"
+
+
+class TestRerouteVisibility:
+    def test_all_feeds_are_fetched(self, plugin, monkeypatch):
+        requested = _patch_feeds_by_slug(monkeypatch, {})
+        plugin.config = {"station": REROUTE_STATION, "show_alerts": False}
+        plugin.fetch_data()
+        assert set(requested) == set(plugin_module.ALL_FEEDS)
+
+    def test_rerouted_route_from_another_feed_is_shown(self, plugin, monkeypatch):
+        """An E at 46 St lives in the ace feed, which the station never scheduled."""
+        _patch_feeds_by_slug(monkeypatch, {
+            "gtfs-ace": _build_feed([("E", REROUTE_STOP + "N", 120)]),
+            "gtfs-bdfm": _build_feed([("F", REROUTE_STOP + "N", 360)]),
+        })
+        plugin.config = {"station": REROUTE_STATION, "show_alerts": False}
+        result = plugin.fetch_data()
+
+        routes = {a["route"] for a in result.data["arrivals"]}
+        assert routes == {"E", "F"}
+
+    def test_rerouted_route_gets_a_status(self, plugin, monkeypatch):
+        """A rerouted route is real service — it belongs in line_statuses."""
+        _patch_feeds_by_slug(monkeypatch, {
+            "gtfs-ace": _build_feed([("E", REROUTE_STOP + "N", 120)]),
+        })
+        plugin.config = {"station": REROUTE_STATION, "show_alerts": False}
+        result = plugin.fetch_data()
+
+        assert "E" in {ls["route"] for ls in result.data["line_statuses"]}
+        assert all(a["status"] for a in result.data["arrivals"])
+
+    def test_route_filter_still_applies_across_feeds(self, plugin, monkeypatch):
+        _patch_feeds_by_slug(monkeypatch, {
+            "gtfs-ace": _build_feed([("E", REROUTE_STOP + "N", 120)]),
+            "gtfs-bdfm": _build_feed([("F", REROUTE_STOP + "N", 360)]),
+        })
+        plugin.config = {
+            "station": REROUTE_STATION, "routes": "E", "show_alerts": False,
+        }
+        result = plugin.fetch_data()
+        assert {a["route"] for a in result.data["arrivals"]} == {"E"}
+
+    def test_same_trip_in_two_feeds_counted_once(self, plugin, station_stop,
+                                                 monkeypatch):
+        """A trip carried by two feeds is one train, not two."""
+        _, stop_id = station_stop
+        payload = _build_feed([("L", stop_id + "N", 120)])
+        _patch_feeds_by_slug(monkeypatch, {"gtfs-l": payload, "gtfs-g": payload})
+        plugin.config = {"station": TEST_STATION, "show_alerts": False}
+        result = plugin.fetch_data()
+        assert result.data["arrival_count"] == 1
