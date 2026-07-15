@@ -11,6 +11,7 @@ feed(s) that actually serve it.
 
 import logging
 import os
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -69,6 +70,9 @@ ROUTE_COLORS = {
 MAX_LINES = 6  # board height
 LINE_WIDTH = 22  # board width
 
+# Cap for direction labels, matching `max_lengths` in manifest.json.
+LABEL_WIDTH = 22
+
 # GTFS-realtime Alert.Effect enum -> status color.
 # Anything not listed (incl. ADDITIONAL_SERVICE, UNKNOWN_EFFECT, no alert) = green.
 STATUS_GREEN = "green"
@@ -88,6 +92,23 @@ _EFFECT_STATUS = {
 
 def _color_for_route(route: str) -> str:
     return ROUTE_COLORS.get((route or "").upper(), "white")
+
+
+def _short_place(name: str) -> str:
+    """Shorten a terminus to the place riders name a direction by.
+
+    MTA signage says trains run to "Forest Hills", not "Forest Hills-71 Av".
+    Station names pair a place with a cross street; keep the place half —
+    unless the place half *is* the street ("34 St-Hudson Yards"), in which
+    case the other half is the name people use.
+    """
+    head, sep, tail = (name or "").partition("-")
+    if not sep:
+        return name
+    head, tail = head.strip(), tail.strip()
+    if head[:1].isdigit() and tail:
+        return tail
+    return head or name
 
 
 class NycSubwayPlugin(PluginBase):
@@ -194,7 +215,8 @@ class NycSubwayPlugin(PluginBase):
         )
 
         groups = self._group_arrivals(arrivals, labels, max_arrivals)
-        data = self._build_data(station, groups, statuses)
+        direction_labels = self._direction_labels(station, groups)
+        data = self._build_data(station, groups, statuses, direction_labels)
         return PluginResult(
             available=True,
             data=data,
@@ -373,21 +395,84 @@ class NycSubwayPlugin(PluginBase):
         result.sort(key=lambda g: (g["etas"][0] if g["etas"] else 999, g["route"]))
         return result
 
+    @staticmethod
+    def _direction_labels(
+        station: Dict[str, Any], groups: List[Dict[str, Any]]
+    ) -> Dict[str, str]:
+        """Station-wide name for each direction, e.g. {'N': 'Forest Hills', 'S': 'Manhattan'}.
+
+        Prefers the MTA's own platform label ("Manhattan", "The Bronx"). When
+        that label is generic ("Outbound", "Uptown"), names the direction after
+        where its trains actually go — the terminus serving the most upcoming
+        trains, ties going to the soonest. That's how the platform signs read,
+        and how the MTA app labels 46 St as "Forest Hills" / "Manhattan".
+
+        A big complex has no single answer: Times Sq's northbound 7 platform
+        points to Queens while its 1 platform points uptown. When the platforms
+        disagree, the plain compass direction is the only honest label — the
+        per-train ``direction_label`` still names each train's own platform.
+        """
+        stops = station.get("stops", [])
+        labels: Dict[str, str] = {}
+        for suffix, key in (("N", "north_label"), ("S", "south_label")):
+            specific = [
+                stop[key]
+                for stop in stops
+                if stop.get(key)
+                and stop[key].strip().lower() not in _GENERIC_LABELS
+            ]
+            # Speak for the whole station only when every platform agrees.
+            if specific and len(specific) == len(stops) and len(set(specific)) == 1:
+                labels[suffix] = specific[0][:LABEL_WIDTH]
+                continue
+            # Platforms disagree (or some are generic): no station-wide answer.
+            if len(stops) != 1:
+                labels[suffix] = DIRECTION_NAME[suffix].title()
+                continue
+
+            # One platform, generic label ("Outbound") — name it by terminus.
+            weight: Counter = Counter()
+            soonest: Dict[str, int] = {}
+            for group in groups:
+                terminus = group["terminus"]
+                if group["suffix"] != suffix or not terminus:
+                    continue
+                weight[terminus] += len(group["etas"])
+                eta = group["etas"][0] if group["etas"] else 999
+                soonest[terminus] = min(soonest.get(terminus, 999), eta)
+
+            if weight:
+                terminus = max(
+                    weight.items(), key=lambda kv: (kv[1], -soonest[kv[0]])
+                )[0]
+                labels[suffix] = _short_place(terminus)[:LABEL_WIDTH]
+            else:
+                labels[suffix] = DIRECTION_NAME[suffix].title()
+        return labels
+
     def _build_data(
         self,
         station: Dict[str, Any],
         groups: List[Dict[str, Any]],
         statuses: Dict[str, str],
+        direction_labels: Dict[str, str],
     ) -> Dict[str, Any]:
         """Build the template-variable dictionary."""
         arrivals = []
         for group in groups:
             route_status = statuses.get(group["route"].upper(), STATUS_GREEN)
+            # Name the direction by the platform this train actually leaves from,
+            # so the 7 at Times Sq reads "Queens" while the 1 reads uptown.
+            direction_label = (
+                _short_place(group["label"])[:LABEL_WIDTH]
+                or direction_labels.get(group["suffix"], "")
+            )
             for eta in group["etas"]:
                 arrivals.append({
                     "route": group["route"],
                     "direction": group["direction"],
                     "direction_short": group["direction_short"],
+                    "direction_label": direction_label,
                     "eta": eta,
                     "label": group["label"],
                     "terminus": group["terminus"],
@@ -418,6 +503,8 @@ class NycSubwayPlugin(PluginBase):
             "arrival_count": len(arrivals),
             "updated_at": datetime.now().strftime("%H:%M"),
             "arrivals": arrivals,
+            "uptown_label": direction_labels.get("N", ""),
+            "downtown_label": direction_labels.get("S", ""),
             "line_status": overall,
             "line_statuses": line_statuses,
         }

@@ -15,8 +15,15 @@ grouped by route and direction, using the MTA's GTFS-realtime subway feeds.
 ### Station
 
 ```
-{{nyc_subway.station_name}}   # Resolved station name (e.g. "Times Sq-42 St")
+{{nyc_subway.station_name}}     # Resolved station name (e.g. "Times Sq-42 St")
+{{nyc_subway.uptown_label}}     # Friendly name for the uptown direction (e.g. "Forest Hills")
+{{nyc_subway.downtown_label}}   # Friendly name for the downtown direction (e.g. "Manhattan")
 ```
+
+Direction labels read the way the MTA app and the platform signs do. They use
+the MTA's own platform label when it is specific ("Manhattan", "The Bronx"),
+and otherwise name the direction after where its trains actually go — so a
+station whose feed just says "Outbound" shows "Forest Hills" instead.
 
 ### Arrivals
 
@@ -34,6 +41,11 @@ Each item is one upcoming train, soonest first:
 {{nyc_subway.arrivals.0.route}}            # Route (e.g. "1", "Q", "GS")
 {{nyc_subway.arrivals.0.direction}}        # "uptown" or "downtown"
 {{nyc_subway.arrivals.0.direction_short}}  # "up" or "down" (for narrow boards)
+{{nyc_subway.arrivals.0.direction_label}}  # Friendly direction name, as the MTA
+                                           #   app shows it (e.g. "Forest Hills",
+                                           #   "Manhattan"). Names the direction,
+                                           #   not this train — see `terminus` for
+                                           #   where this particular train ends up.
 {{nyc_subway.arrivals.0.eta}}              # Minutes until arrival
 {{nyc_subway.arrivals.0.label}}            # Platform label (e.g. "Manhattan", "Forest Hills"),
                                            #   falling back to the terminus if MTA's label

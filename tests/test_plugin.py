@@ -74,6 +74,28 @@ def _build_feed(arrivals, use_departure=False, with_nyct=False):
     return feed.SerializeToString()
 
 
+def _build_trip_feed(trips):
+    """Serialize a feed of multi-stop trips, so each trip has a real terminus.
+
+    trips: list of (route_id, [(stop_id, seconds_from_now), ...]) — the last
+    stop in a trip is its terminus, exactly as in the MTA feeds.
+    """
+    feed = pb.FeedMessage()
+    feed.header.gtfs_realtime_version = "1.0"
+    now = time.time()
+    for index, (route, stops) in enumerate(trips):
+        entity = feed.entity.add()
+        entity.id = str(index)
+        trip_update = entity.trip_update
+        trip_update.trip.route_id = route
+        trip_update.trip.trip_id = f"{route}-{index}"
+        for stop_id, offset in stops:
+            stu = trip_update.stop_time_update.add()
+            stu.stop_id = stop_id
+            stu.arrival.time = int(now + offset)
+    return feed.SerializeToString()
+
+
 class _FakeResponse:
     def __init__(self, content):
         self.content = content
@@ -90,6 +112,23 @@ def _patch_feed(monkeypatch, payload):
         return _FakeResponse(payload)
 
     monkeypatch.setattr(plugin_module.requests, "get", fake_get)
+
+
+def _patch_feeds_by_slug(monkeypatch, payloads):
+    """Serve a different payload per feed slug; every other feed comes back empty.
+
+    Mirrors the real MTA split, where a trip lives in exactly one feed.
+    """
+    empty = _build_feed([])
+    requested = []
+
+    def fake_get(url, timeout=None):
+        slug = url.rsplit("%2F", 1)[-1]
+        requested.append(slug)
+        return _FakeResponse(payloads.get(slug, empty))
+
+    monkeypatch.setattr(plugin_module.requests, "get", fake_get)
+    return requested
 
 
 # --------------------------------------------------------------------- #
@@ -356,3 +395,99 @@ class TestStationResolution:
         assert stations_module.feeds_for(station) == station["feeds"]
         labels = stations_module.direction_labels(station)
         assert all({"N", "S"} <= set(v) for v in labels.values())
+
+
+# --------------------------------------------------------------------- #
+# Friendly direction labels
+# --------------------------------------------------------------------- #
+# 46 St (Queens) has a generic northbound platform label ("Outbound") and a
+# specific southbound one ("Manhattan") — a good exercise for both paths.
+LABEL_STATION = "46 St (M R)"
+LABEL_STOP = "G18"
+
+
+class TestDirectionLabels:
+    def test_platform_label_used_when_specific(self, plugin, monkeypatch):
+        """46 St's southbound platform is labelled 'Manhattan' — use it verbatim."""
+        _patch_feeds_by_slug(monkeypatch, {
+            "gtfs-bdfm": _build_feed([("F", LABEL_STOP + "S", 120)]),
+        })
+        plugin.config = {"station": LABEL_STATION, "show_alerts": False}
+        result = plugin.fetch_data()
+
+        assert result.data["downtown_label"] == "Manhattan"
+        assert result.data["arrivals"][0]["direction_label"] == "Manhattan"
+
+    def test_generic_platform_label_named_after_terminus(self, plugin, monkeypatch):
+        """46 St's northbound label is the generic 'Outbound' — name it by terminus."""
+        _patch_feeds_by_slug(monkeypatch, {
+            # An M running to Forest Hills-71 Av (G08), the Queens terminus.
+            "gtfs-bdfm": _build_trip_feed([
+                ("M", [(LABEL_STOP + "N", 120), ("G08N", 480)]),
+            ]),
+        })
+        plugin.config = {"station": LABEL_STATION, "show_alerts": False}
+        result = plugin.fetch_data()
+
+        assert result.data["uptown_label"] == "Forest Hills"
+        assert result.data["arrivals"][0]["direction_label"] == "Forest Hills"
+        # The full terminus name stays available for templates that want it.
+        assert result.data["arrivals"][0]["terminus"] == "Forest Hills-71 Av"
+
+    def test_direction_label_fits_manifest_max_length(self, plugin, manifest_data,
+                                                      monkeypatch):
+        _patch_feeds_by_slug(monkeypatch, {
+            # Jamaica Center-Parsons/Archer (G05) is longer than the 22-col cap.
+            "gtfs-ace": _build_trip_feed([
+                ("E", [(LABEL_STOP + "N", 120), ("G05N", 900)]),
+            ]),
+        })
+        plugin.config = {"station": LABEL_STATION, "show_alerts": False}
+        result = plugin.fetch_data()
+
+        cap = manifest_data["max_lengths"]["arrivals.*.direction_label"]
+        assert len(result.data["uptown_label"]) <= cap
+        assert all(len(a["direction_label"]) <= cap
+                   for a in result.data["arrivals"])
+
+    @pytest.mark.parametrize("terminus,expected", [
+        ("Forest Hills-71 Av", "Forest Hills"),
+        ("Jamaica-179 St", "Jamaica"),
+        ("Coney Island-Stillwell Av", "Coney Island"),
+        ("Jamaica Center-Parsons/Archer", "Jamaica Center"),
+        ("34 St-Hudson Yards", "Hudson Yards"),  # place half is the street
+        ("Pelham Bay Park", "Pelham Bay Park"),  # no hyphen, left alone
+        ("", ""),
+    ])
+    def test_short_place(self, terminus, expected):
+        assert plugin_module._short_place(terminus) == expected
+
+    def test_complex_with_disagreeing_platforms_stays_neutral(self, plugin,
+                                                              monkeypatch):
+        """Times Sq's 7 platform points to Queens; its 1 platform does not.
+
+        No single place names that direction for the whole complex, so the
+        station-wide label falls back to the plain compass direction — while
+        each train still names its own platform.
+        """
+        _patch_feeds_by_slug(monkeypatch, {
+            # 127 = Times Sq (1 train), running to Van Cortlandt Park-242 St.
+            "gtfs": _build_trip_feed([
+                ("1", [("127N", 120), ("101N", 1800)]),
+            ]),
+        })
+        plugin.config = {
+            "station": "Times Sq-42 St (1 2 3 7 A C E N Q R S W)",
+            "show_alerts": False,
+        }
+        result = plugin.fetch_data()
+
+        assert result.data["uptown_label"] == "Uptown"
+        assert result.data["arrivals"][0]["direction_label"] == "Van Cortlandt Park"
+
+    def test_no_trains_still_gives_a_direction_name(self, plugin, monkeypatch):
+        _patch_feeds_by_slug(monkeypatch, {})
+        plugin.config = {"station": TEST_STATION, "show_alerts": False}
+        result = plugin.fetch_data()
+        assert result.data["uptown_label"]
+        assert result.data["downtown_label"]
