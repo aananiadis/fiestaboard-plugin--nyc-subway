@@ -580,6 +580,20 @@
         "max_length": 6,
         "group": "status",
         "example": "yellow"
+      },
+      "uptown_label": {
+        "description": "Friendly name for the uptown/northbound direction, e.g. \"Forest Hills\"",
+        "type": "string",
+        "max_length": 22,
+        "group": "station",
+        "example": "Forest Hills"
+      },
+      "downtown_label": {
+        "description": "Friendly name for the downtown/southbound direction, e.g. \"Manhattan\"",
+        "type": "string",
+        "max_length": 22,
+        "group": "station",
+        "example": "Manhattan"
       }
     },
     "arrays": {
@@ -589,6 +603,7 @@
           "route",
           "direction",
           "direction_short",
+          "direction_label",
           "eta",
           "label",
           "terminus",
@@ -609,6 +624,7 @@
     "arrivals.*.route": 3,
     "arrivals.*.direction": 8,
     "arrivals.*.direction_short": 4,
+    "arrivals.*.direction_label": 22,
     "arrivals.*.eta": 3,
     "arrivals.*.label": 12,
     "arrivals.*.terminus": 22,
@@ -624,7 +640,11 @@
     },
     "status": {
       "type": "enum",
-      "values": ["green", "yellow", "red"],
+      "values": [
+        "green",
+        "yellow",
+        "red"
+      ],
       "description": "Color by MTA service-alert status: green = normal, yellow = detour/changes, red = delays or no service"
     }
   },
